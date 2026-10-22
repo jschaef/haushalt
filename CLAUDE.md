@@ -11,9 +11,10 @@ follow jschaef/sarfile_analyzer_web, which is only a template.
 ## Project memory: cloud-memory and cloud-inbox
 
 - **Read before assuming.** Decisions, architecture, findings and bugs of this
-  project are in cloud-memory (`search_cloud_memory`) and, not yet reviewed,
-  in cloud-inbox (`search_cloud_inbox`). Search both before changing how
-  something works; several phrasings. Start with "haushalt app decisions".
+  project are in cloud-memory (`search_cloud_memory`, German) and, not yet
+  reviewed, in cloud-inbox (`search_cloud_inbox`, haushalt notes in English:
+  search German AND English). Search both before changing how something
+  works. Start with "haushalt app decisions". Never delete inbox entries.
 - **Write as you go.** New decisions by Jochen, root causes of bugs, pitfalls
   and measured results go to cloud-inbox (`store_cloud_inbox`), one topic per
   point, in English, never into files of this public repository.
@@ -52,6 +53,11 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   photos are cut into tiles (the API downsizes to ~1568 px). Model
   `HAUSHALT_RECEIPT_MODEL` (default `claude-opus-5-5`, server-side fallback on).
 - Categories: learned rule (normalized item text) → model suggestion → store default.
+- Utilities (`utilities.py`, `utilities_api.py`): meters, readings (must count
+  up), tariffs, bills. The dashboard counts the instalments only; consumption
+  costs and the settlement forecast live on the utilities page (no double
+  counting). New columns on existing tables need an entry in
+  `db._LATER_COLUMNS` (create_all never alters tables).
 - i18n: `lib/i18n/messages.ts` (de reference, en typed against it), cookie `haushalt_locale`.
 
 ## Security
