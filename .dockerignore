@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+backend/.venv
+backend/data
+**/__pycache__
+**/.pytest_cache
+test-results
+playwright-report
+deployment/.env
+.tmp-*

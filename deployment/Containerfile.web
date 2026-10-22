@@ -1,0 +1,28 @@
+# Next.js frontend (standalone server). Build from the repository root:
+#   podman build -f deployment/Containerfile.web -t haushalt-web .
+# another registry (mirror) with --build-arg REGISTRY=mirror.gcr.io/library
+ARG REGISTRY=docker.io/library
+FROM ${REGISTRY}/node:22-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --no-audit --no-fund
+COPY . .
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+FROM ${REGISTRY}/node:22-slim
+WORKDIR /app
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3200 \
+    HOSTNAME=0.0.0.0 \
+    HAUSHALT_API_URL=http://api:8300
+COPY --from=build --chown=node /app/.next/standalone ./
+COPY --from=build --chown=node /app/.next/static ./.next/static
+USER node
+EXPOSE 3200
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+  CMD node -e "fetch('http://127.0.0.1:3200/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "server.js"]

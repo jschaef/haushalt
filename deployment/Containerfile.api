@@ -1,0 +1,27 @@
+# haushalt-api (FastAPI). Build from the repository root:
+#   podman build -f deployment/Containerfile.api -t haushalt-api .
+# another registry (mirror) with --build-arg REGISTRY=mirror.gcr.io/library
+ARG REGISTRY=docker.io/library
+FROM ${REGISTRY}/python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HAUSHALT_DATA_DIR=/data
+
+WORKDIR /app
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/haushalt_api ./haushalt_api
+
+# unprivileged user; /data holds the database, the secret and receipt files
+RUN useradd --system --uid 10001 --home-dir /data haushalt \
+    && mkdir -p /data && chown haushalt /data
+USER 10001
+VOLUME /data
+EXPOSE 8300
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8300/api/v1/health', timeout=2)"
+
+CMD ["uvicorn", "haushalt_api.main:app", "--host", "0.0.0.0", "--port", "8300", "--proxy-headers"]

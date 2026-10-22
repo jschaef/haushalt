@@ -1,0 +1,50 @@
+# Run with podman compose or docker compose from the repository root:
+#   cp deployment/.env.example deployment/.env   # set ANTHROPIC_API_KEY
+#   docker compose -f deployment/compose.yaml up -d --build
+# Only the web container is published; the API stays on the internal network.
+name: haushalt
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deployment/Containerfile.api
+    image: haushalt-api:latest
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HAUSHALT_DATA_DIR: /data
+    volumes:
+      - haushalt-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  web:
+    build:
+      context: ..
+      dockerfile: deployment/Containerfile.web
+    image: haushalt-web:latest
+    restart: unless-stopped
+    environment:
+      HAUSHALT_API_URL: http://api:8300
+      # Secure cookies need HTTPS in front of the app (reverse proxy or VPN
+      # with certificates). Set to false only for plain-HTTP tests.
+      HAUSHALT_COOKIE_SECURE: ${HAUSHALT_COOKIE_SECURE:-true}
+    ports:
+      - "${HAUSHALT_PORT:-3200}:3200"
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+volumes:
+  haushalt-data:
