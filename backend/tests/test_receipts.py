@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from haushalt_api.extraction import ExtractionError, FakeExtractor
 from haushalt_api import main
@@ -111,3 +111,32 @@ def test_category_crud(client, auth):
     updated = client.put(f"/api/v1/categories/{created.json()['id']}", headers=auth, json=body)
     assert updated.json()["name_en"] == "Animals"
     assert client.post("/api/v1/categories", headers=auth, json={**body, "key": "x y"}).status_code == 422
+
+
+def test_files_are_deleted_after_the_retention_period(client, auth, png, monkeypatch):
+    from haushalt_api import config, receipts as receipts_module
+    from haushalt_api.db import SessionLocal
+
+    monkeypatch.setattr(config, "RECEIPT_PHOTO_DAYS", 365)
+    today = date.today()
+    ids = {}
+    for name, days_ago, confirm in [("old", 400, True), ("recent", 100, True), ("old draft", 400, False)]:
+        [r] = upload(client, auth, png + name.encode()).json()
+        client.patch(f"/api/v1/receipts/{r['id']}", headers=auth, json={"purchased_on": (today - timedelta(days=days_ago)).isoformat()})
+        if confirm:
+            client.post(f"/api/v1/receipts/{r['id']}/confirm", headers=auth)
+        ids[name] = r["id"]
+    with SessionLocal() as session:
+        assert receipts_module.expire_files(session) == 1
+        assert receipts_module.expire_files(session) == 0  # idempotent
+    old = client.get(f"/api/v1/receipts/{ids['old']}", headers=auth).json()
+    assert old["file_deleted"] is True and old["total_cents"] == 1243 and len(old["items"]) == 5
+    assert client.get(f"/api/v1/receipts/{ids['old']}/file", headers=auth).status_code == 410
+    assert client.post(f"/api/v1/receipts/{ids['old']}/reread", headers=auth).status_code == 422
+    # recent receipts and drafts (still to be reviewed) keep their file
+    assert client.get(f"/api/v1/receipts/{ids['recent']}/file", headers=auth).status_code == 200
+    assert client.get(f"/api/v1/receipts/{ids['old draft']}/file", headers=auth).status_code == 200
+    # 0 keeps files forever
+    monkeypatch.setattr(config, "RECEIPT_PHOTO_DAYS", 0)
+    with SessionLocal() as session:
+        assert receipts_module.expire_files(session) == 0

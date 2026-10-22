@@ -241,3 +241,13 @@ def test_all_time_range_starts_with_the_oldest_counted_booking(client, auth):
     client.patch(f"/api/v1/bank/transactions/{tx['id']}", headers=auth, json={"status": "counted", "category_id": cats["lifestyle"]})
     summary = client.get("/api/v1/stats/summary?range=all", headers=auth).json()
     assert summary["start"] == d(40).isoformat() and summary["total_cents"] == 3000
+
+
+def test_long_counterparty_is_learned_within_column_limits(client, auth):
+    cats = {c["key"]: c["id"] for c in client.get("/api/v1/categories", headers=auth).json()}
+    name = "Sehr langer Empfaenger " * 20  # > 256 characters after normalizing
+    import_file(client, auth, csv_rows((d(2), name, "Bestellung", "-5,00")))
+    [tx] = client.get("/api/v1/bank/transactions", headers=auth).json()
+    decided = client.patch(f"/api/v1/bank/transactions/{tx['id']}", headers=auth, json={"status": "counted", "category_id": cats["lifestyle"]})
+    assert decided.status_code == 200
+    assert import_file(client, auth, csv_rows((d(1), name, "Bestellung 2", "-6,00"))).json()["counted"] == 1

@@ -95,6 +95,8 @@ class Receipt(Base):
     file_name: Mapped[str] = mapped_column(String(256), default="")
     media_type: Mapped[str] = mapped_column(String(64), default="")
     sha256: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # set when the file was deleted after the retention period
+    file_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     extraction: Mapped[dict | None] = mapped_column(JSON)
     error: Mapped[str] = mapped_column(String(512), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -295,12 +297,13 @@ def init_db() -> None:
 # Columns added after the first release. create_all() creates new tables but
 # never alters existing ones, so older databases get them here.
 _LATER_COLUMNS = {
+    "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {
         "ingest_token_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
         "source_url": "VARCHAR(512) NOT NULL DEFAULT ''",
         "source_path": "VARCHAR(128) NOT NULL DEFAULT ''",
-        "last_ingest_at": "DATETIME",
+        "last_ingest_at": "TIMESTAMP WITH TIME ZONE",  # valid in SQLite and PostgreSQL
         "last_ingest_error": "VARCHAR(256) NOT NULL DEFAULT ''",
     },
 }

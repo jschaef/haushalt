@@ -300,7 +300,8 @@ def match(session: Session, tx: BankTransaction) -> None:
     if len(recurring) == 1:
         tx.status, tx.recurring_id = "fixed", recurring[0].id
         return
-    pattern = RULE_PREFIX + normalize(tx.counterparty)
+    # column limit (PostgreSQL enforces it, SQLite does not)
+    pattern = (RULE_PREFIX + normalize(tx.counterparty))[:256]
     rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern)) if tx.counterparty else None
     if rule is not None:
         rule.hits += 1
@@ -310,7 +311,8 @@ def match(session: Session, tx: BankTransaction) -> None:
 def learn_counterparty(session: Session, tx: BankTransaction) -> None:
     if not tx.counterparty or tx.category_id is None:
         return
-    pattern = RULE_PREFIX + normalize(tx.counterparty)
+    # column limit (PostgreSQL enforces it, SQLite does not)
+    pattern = (RULE_PREFIX + normalize(tx.counterparty))[:256]
     rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern))
     if rule is None:
         session.add(CategoryRule(pattern=pattern, category_id=tx.category_id))

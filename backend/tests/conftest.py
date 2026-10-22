@@ -10,7 +10,12 @@ os.environ["HAUSHALT_DATA_DIR"] = str(_DATA)
 os.environ["HAUSHALT_EXTRACTOR"] = "fake"
 os.environ["HAUSHALT_SECRET"] = "test-secret"
 os.environ["HAUSHALT_POLL_MINUTES"] = "0"
-os.environ.pop("HAUSHALT_DATABASE_URL", None)
+# SQLite by default; HAUSHALT_TEST_DATABASE_URL runs the same suite against
+# PostgreSQL (CI does both). That database is emptied by the tests.
+if os.environ.get("HAUSHALT_TEST_DATABASE_URL"):
+    os.environ["HAUSHALT_DATABASE_URL"] = os.environ["HAUSHALT_TEST_DATABASE_URL"]
+else:
+    os.environ.pop("HAUSHALT_DATABASE_URL", None)
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

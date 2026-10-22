@@ -7,7 +7,7 @@ next receipt with that article gets it without asking the model.
 """
 
 import hashlib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +22,26 @@ SUFFIX = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "ima
 
 def receipt_path(receipt: Receipt):
     return config.RECEIPT_DIR / f"{receipt.id}{SUFFIX.get(receipt.media_type, '.bin')}"
+
+
+def expire_files(session: Session, today: date | None = None) -> int:
+    """Deletes the files of confirmed receipts bought more than
+    RECEIPT_PHOTO_DAYS ago; returns how many. Data read from them stays."""
+    if config.RECEIPT_PHOTO_DAYS <= 0:
+        return 0
+    cutoff = (today or date.today()) - timedelta(days=config.RECEIPT_PHOTO_DAYS)
+    expired = session.scalars(
+        select(Receipt).where(
+            Receipt.status == "confirmed",
+            Receipt.file_deleted_at.is_(None),
+            Receipt.purchased_on < cutoff,
+        )
+    ).all()
+    for receipt in expired:
+        receipt_path(receipt).unlink(missing_ok=True)
+        receipt.file_deleted_at = datetime.now(timezone.utc)
+    session.commit()
+    return len(expired)
 
 
 def find_or_create_store(session: Session, name: str) -> Store | None:

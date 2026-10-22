@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from . import banking_api, config, receipts, smartmeter, smartmeter_api, stats, utilities_api
 from .auth import TokenClaims, create_token, current_claims, current_user, hash_password, revoke, verify_password
-from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, Store, User, get_session, init_db
+from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, SessionLocal, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
 
@@ -25,9 +25,24 @@ logger = logging.getLogger("haushalt_api")
 async def lifespan(_app: FastAPI):
     init_db()
     poller = asyncio.create_task(smartmeter.poll_forever()) if config.POLL_MINUTES > 0 else None
+    housekeeping = asyncio.create_task(daily_housekeeping())
     yield
+    housekeeping.cancel()
     if poller:
         poller.cancel()
+
+
+async def daily_housekeeping() -> None:
+    """Once at start and then daily: delete receipt files past retention."""
+    while True:
+        try:
+            with SessionLocal() as session:
+                expired = await asyncio.to_thread(receipts.expire_files, session)
+            if expired:
+                logger.info("deleted %s receipt files after the retention period", expired)
+        except Exception:  # keep the loop alive; the error is logged
+            logger.exception("housekeeping failed")
+        await asyncio.sleep(24 * 3600)
 
 
 # The OpenAPI pages are off unless asked for: they list every endpoint.
@@ -126,6 +141,7 @@ class ReceiptOut(BaseModel):
     items: list[ItemOut]
     item_sum_cents: int
     duplicates: list[int] = []
+    file_deleted: bool = False
 
 
 class RecurringIn(BaseModel):
@@ -173,6 +189,7 @@ def receipt_out(receipt: Receipt, session: Session | None = None) -> ReceiptOut:
         uploaded_by=receipt.user_id,
         items=items,
         item_sum_cents=sum(i.total_cents for i in receipt.items),
+        file_deleted=receipt.file_deleted_at is not None,
         duplicates=receipts.duplicates(session, receipt) if session is not None else [],
     )
 
@@ -405,6 +422,8 @@ def show_receipt(receipt_id: int, _user: User = Depends(current_user), session: 
 @app.get(f"{PREFIX}/receipts/{{receipt_id}}/file")
 def receipt_file(receipt_id: int, _user: User = Depends(current_user), session: Session = Depends(get_session)):
     receipt = get_receipt(session, receipt_id)
+    if receipt.file_deleted_at is not None:
+        raise HTTPException(status_code=410, detail="File deleted after the retention period")
     path = receipts.receipt_path(receipt)
     if not path.exists():
         raise HTTPException(status_code=404, detail="File missing")
@@ -445,6 +464,8 @@ def confirm_receipt(receipt_id: int, _user: User = Depends(current_user), sessio
 @app.post(f"{PREFIX}/receipts/{{receipt_id}}/reread", response_model=ReceiptOut)
 def reread_receipt(receipt_id: int, _user: User = Depends(current_user), session: Session = Depends(get_session)):
     receipt = get_receipt(session, receipt_id)
+    if receipt.file_deleted_at is not None:
+        raise HTTPException(status_code=422, detail="File deleted after the retention period")
     receipt.status = "draft"
     receipts.read(session, get_extractor(), receipt)
     session.commit()

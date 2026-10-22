@@ -34,3 +34,8 @@ LOGIN_BLOCK_SECONDS = int(os.getenv("HAUSHALT_LOGIN_BLOCK_SECONDS", 300))
 # Polled addresses must be private/local unless HAUSHALT_POLL_ALLOW_PUBLIC.
 POLL_MINUTES = int(os.getenv("HAUSHALT_POLL_MINUTES", 15))
 POLL_ALLOW_PUBLIC = os.getenv("HAUSHALT_POLL_ALLOW_PUBLIC", "false").lower() in ("1", "true", "yes")
+
+# Receipt photos/PDFs of confirmed receipts are deleted this many days after
+# the purchase date (Jochen 2026-10-22: one year); the data read from them
+# stays. 0 keeps them forever. Drafts keep their file for the review.
+RECEIPT_PHOTO_DAYS = int(os.getenv("HAUSHALT_RECEIPT_PHOTO_DAYS", 365))
