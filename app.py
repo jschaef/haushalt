@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from expenses_logic import add_expense, get_category_label, load_expenses, summarize_expenses
+from expenses_logic import add_expense, load_expenses, summarize_expenses
 
 ROOT = Path(__file__).resolve().parent
 INDEX_FILE = ROOT / "index.html"
@@ -24,12 +24,6 @@ class ExpenseHandler(BaseHTTPRequestHandler):
         if parsed.path in {"/", "/index.html"}:
             self._send_file(INDEX_FILE)
             return
-
-        if parsed.path.startswith("/static/"):
-            file_path = ROOT / parsed.path.lstrip("/")
-            if file_path.exists() and file_path.is_file():
-                self._send_file(file_path)
-                return
 
         self.send_response(404)
         self.end_headers()
@@ -72,15 +66,14 @@ class ExpenseHandler(BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _send_file(self, file_path: Path) -> None:
-        content = file_path.read_bytes()
-        content_type = "text/html; charset=utf-8"
-        if file_path.suffix == ".css":
-            content_type = "text/css; charset=utf-8"
-        elif file_path.suffix == ".js":
-            content_type = "application/javascript; charset=utf-8"
+        if file_path != INDEX_FILE:
+            self.send_response(403)
+            self.end_headers()
+            return
 
+        content = file_path.read_bytes()
         self.send_response(200)
-        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(content)))
         self.end_headers()
         self.wfile.write(content)
