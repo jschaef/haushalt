@@ -15,6 +15,10 @@ follow jschaef/sarfile_analyzer_web, which is only a template.
   reviewed, in cloud-inbox (`search_cloud_inbox`, haushalt notes in English:
   search German AND English). Search both before changing how something
   works. Start with "haushalt app decisions". Never delete inbox entries.
+- **Recurring errors** (Jochen, 2026-10-22): when an error happens a second
+  time, record it in cloud-inbox as a recurring error, and search the inbox
+  for "recurring error haushalt" now and then, at the latest before larger
+  changes.
 - **Write as you go.** New decisions by Jochen, root causes of bugs, pitfalls
   and measured results go to cloud-inbox (`store_cloud_inbox`), one topic per
   point, in English, never into files of this public repository.
@@ -64,9 +68,12 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   recurring cost). Deleting those reopens linked bookings.
 - Themes (next-themes): `light`, `dark`, `contrast` (low-vision mode in
   `app/globals.css`: black/white/yellow, 118.75 % text, opaque, no motion via
-  `components/motion-mode.tsx`). `e2e/a11y.spec.ts` runs axe (WCAG 2.1 AA,
-  serious/critical) on every page in all three themes and fails on sideways
-  scrolling in high contrast - add new pages to its PAGES list.
+  `components/motion-mode.tsx`).
+- Accessibility baseline (Jochen: follow the standards): WCAG 2.2 level AA as
+  referenced by EN 301 549 V4.1.1 (BFSG). `e2e/a11y.spec.ts` runs axe
+  (wcag2a-22aa, serious/critical) on every page in all three themes, checks
+  reflow at 320 px (1.4.10), focus not obscured by the sticky bars (2.4.11)
+  and no sideways scrolling in high contrast - add new pages to its PAGES list.
 - i18n: `lib/i18n/messages.ts` (de reference, en typed against it), cookie `haushalt_locale`.
 
 ## Security

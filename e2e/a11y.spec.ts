@@ -2,12 +2,16 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { login } from "./helpers";
 
+// Baseline: WCAG 2.2 level AA, the web requirements of EN 301 549 V4.1.1
+// (European standard behind the BFSG). axe covers the automatable rules;
+// reflow (1.4.10) and focus not obscured (2.4.11) are checked below.
+
 test.use({ locale: "de-DE" });
 
 const PAGES = ["/dashboard", "/receipts", "/fixed", "/utilities", "/bank", "/settings"];
 
 async function violations(page: Page) {
-  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
   return result.violations
     .filter((v) => v.impact === "serious" || v.impact === "critical")
     .map((v) => `${v.id}: ${v.nodes.slice(0, 3).map((n) => n.target.join(" ")).join(" | ")}`);
@@ -66,4 +70,44 @@ test("login page has no serious accessibility violations", async ({ page }) => {
   await page.goto("/login");
   await page.waitForTimeout(800);
   expect(await violations(page)).toEqual([]);
+});
+
+for (const theme of ["dark", "contrast"]) {
+  test(`reflow: no sideways scrolling at 320 CSS px (${theme})`, async ({ page }) => {
+    // WCAG 1.4.10: content usable at 320 px width without horizontal scrolling
+    await page.setViewportSize({ width: 320, height: 640 });
+    await login(page);
+    await setTheme(page, theme);
+    for (const path of PAGES) {
+      await page.goto(path);
+      await page.waitForLoadState("networkidle");
+      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      expect(overflow, `${path} scrolls sideways at 320 px`).toBeLessThanOrEqual(0);
+    }
+  });
+}
+
+test("focus is not hidden behind the sticky header or the tab bar", async ({ page, isMobile }) => {
+  // WCAG 2.4.11: a focused element must not be entirely covered
+  await login(page);
+  await setTheme(page, "contrast");
+  for (const path of ["/settings", "/fixed"]) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    for (let i = 0; i < 40; i++) {
+      await page.keyboard.press("Tab");
+      const hidden = await page.evaluate((mobile) => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || el === document.body) return null;
+        if (el.closest("header, nav[aria-label=Main]")) return null;
+        const r = el.getBoundingClientRect();
+        const covers = [document.querySelector("header > div"), mobile ? document.querySelector("nav[aria-label=Main] > div") : null]
+          .filter(Boolean)
+          .map((c) => (c as HTMLElement).getBoundingClientRect());
+        const covered = covers.some((c) => r.top >= c.top && r.bottom <= c.bottom && r.left >= c.left && r.right <= c.right);
+        return covered ? `${el.tagName} ${el.textContent?.trim().slice(0, 30) ?? ""}` : null;
+      }, !!isMobile);
+      expect(hidden, `${path}: focus hidden after ${i + 1} tabs`).toBeNull();
+    }
+  }
 });

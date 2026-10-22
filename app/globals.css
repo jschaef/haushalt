@@ -193,6 +193,12 @@
   html {
     @apply font-sans;
     -webkit-tap-highlight-color: transparent;
+    /* keep focused elements clear of the sticky header and, on phones, the
+       fixed tab bar (WCAG 2.4.11 focus not obscured) */
+    scroll-padding-top: 6rem;
+    @media (width < 48rem) {
+      scroll-padding-bottom: 7rem;
+    }
   }
 }
 
