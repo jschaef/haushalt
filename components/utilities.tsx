@@ -672,7 +672,9 @@ function MeterCard({
             {s.projected_balance_cents !== null ? (
               <Balance cents={s.projected_balance_cents} testId="forecast" className="text-2xl" />
             ) : (
-              <p className="text-xs text-muted-foreground">{t("util.noForecast")}</p>
+              <p className="text-xs text-muted-foreground">
+                {t(s.per_day === null ? "util.noForecastReadings" : s.projected_cost_cents === null ? "util.noForecastTariff" : "util.noForecastInstalment")}
+              </p>
             )}
             {s.suggested_instalment_cents !== null && (
               <p className="tabular mt-1 text-xs text-muted-foreground">

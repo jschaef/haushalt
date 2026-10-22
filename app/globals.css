@@ -141,8 +141,9 @@
   .glass {
     background: var(--glass);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(20px) saturate(1.4);
-    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    /* utilities, not plain backdrop-filter: the CSS minifier kept only the
+       -webkit- form of a hand-written pair, which Chromium ignores */
+    @apply backdrop-blur-xl backdrop-saturate-150;
     box-shadow:
       0 1px 0 0 oklch(1 0 0 / 6%) inset,
       0 10px 30px -12px oklch(0 0 0 / 18%);

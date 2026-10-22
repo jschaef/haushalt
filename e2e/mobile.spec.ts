@@ -24,3 +24,11 @@ test("desktop has no bottom tab bar", async ({ page, isMobile }) => {
   await login(page);
   await expect(page.getByRole("navigation", { name: "Main" })).toBeHidden();
 });
+
+// regression: the CSS minifier once dropped the unprefixed backdrop-filter,
+// so glass surfaces were not blurred in Chromium
+test("glass surfaces are blurred", async ({ page }) => {
+  await login(page);
+  const filter = await page.locator(".glass").first().evaluate((el) => getComputedStyle(el).backdropFilter);
+  expect(filter).toContain("blur");
+});
