@@ -31,3 +31,14 @@ test("path traversal through the gateway is not served", async ({ page, playwrig
   expect([200, 400, 404]).toContain(dotted.status());
   await anonymous.dispose();
 });
+
+test("the configured public origin (tailscale serve) may log in, others may not", async ({ playwright, baseURL }) => {
+  const context = await playwright.request.newContext({ baseURL });
+  const body = { username: "nobody", password: "wrong-password" };
+  // 401: the origin check passed, the credentials did not
+  const allowed = await context.post("/api/auth/login", { headers: { Origin: "https://haushalt.example.ts.net" }, data: body });
+  expect(allowed.status()).toBe(401);
+  const foreign = await context.post("/api/auth/login", { headers: { Origin: "https://haushalt.example.ts.net.evil.example" }, data: body });
+  expect(foreign.status()).toBe(403);
+  await context.dispose();
+});

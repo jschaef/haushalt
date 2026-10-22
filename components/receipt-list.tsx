@@ -4,7 +4,7 @@ import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, ViewTransition } from "react";
-import { AlertTriangle, Camera, FileText, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Camera, FileText, ImageOff, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useScan } from "@/components/scan";
 import { Badge } from "@/components/ui/badge";
@@ -93,7 +93,9 @@ function SwipeRow({ receipt, onDelete }: { receipt: Receipt; onDelete: (r: Recei
             data-testid="receipt-row"
           >
             <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted">
-              {receipt.source === "pdf" ? (
+              {receipt.file_deleted ? (
+                <ImageOff className="size-5 text-muted-foreground" aria-label={t("receipt.fileDeleted")} />
+              ) : receipt.source === "pdf" ? (
                 <FileText className="size-5 text-muted-foreground" />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element -- authenticated API image, not optimizable

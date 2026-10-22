@@ -36,6 +36,8 @@ export type Receipt = {
   items: Item[];
   item_sum_cents: number;
   duplicates: number[];
+  // photo/PDF deleted after the retention period (data stays)
+  file_deleted: boolean;
 };
 
 export type Averages = { day: number; week: number; month: number; year: number };

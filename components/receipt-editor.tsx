@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, ViewTransition } from "react";
-import { AlertTriangle, ArrowLeft, Check, ExternalLink, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, ExternalLink, ImageOff, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Tile } from "@/components/bento";
 import { Button } from "@/components/ui/button";
@@ -174,7 +174,11 @@ export function ReceiptEditor({ id }: { id: number }) {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_1fr]">
         <Tile className="lg:sticky lg:top-24 lg:self-start" index={0}>
-          {r.source === "pdf" ? (
+          {r.file_deleted ? (
+            <p className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="file-deleted">
+              <ImageOff className="size-4 shrink-0" /> {t("receipt.fileDeleted")}
+            </p>
+          ) : r.source === "pdf" ? (
             <a href={api.fileUrl(r.id)} target="_blank" rel="noopener" className="flex items-center gap-2 text-sm text-primary">
               <ExternalLink className="size-4" /> {t("receipt.openFile")}
             </a>
@@ -272,7 +276,7 @@ export function ReceiptEditor({ id }: { id: number }) {
             <Button variant="outline" onClick={() => save(false)} disabled={busy || !patch}>
               {t("receipt.save")}
             </Button>
-            <Button variant="ghost" onClick={reread} disabled={busy}>
+            <Button variant="ghost" onClick={reread} disabled={busy || r.file_deleted}>
               <RefreshCw /> {t("receipt.reread")}
             </Button>
             <Button variant="destructive" onClick={remove} disabled={busy} className="ml-auto">

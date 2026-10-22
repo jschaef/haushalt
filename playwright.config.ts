@@ -42,7 +42,12 @@ export default defineConfig({
       reuseExistingServer: true,
       timeout: 60_000,
       // plain HTTP in tests: the session cookie must not be Secure
-      env: { HAUSHALT_COOKIE_SECURE: "false", HAUSHALT_API_URL: "http://127.0.0.1:8300" },
+      env: {
+        HAUSHALT_COOKIE_SECURE: "false",
+        HAUSHALT_API_URL: "http://127.0.0.1:8300",
+        // the address behind `tailscale serve`; tested in security.spec.ts
+        HAUSHALT_PUBLIC_ORIGIN: "https://haushalt.example.ts.net",
+      },
     },
   ],
 });

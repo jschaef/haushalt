@@ -48,12 +48,22 @@ export function clearSession(response: NextResponse) {
 export function sameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
+  // Origins the app is reached at, e.g. behind `tailscale serve`
+  // (HAUSHALT_PUBLIC_ORIGIN, comma-separated), are accepted as well.
+  if (publicOrigins().includes(origin.replace(/\/$/, "").toLowerCase())) return true;
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
   try {
     return new URL(origin).host === host;
   } catch {
     return false;
   }
+}
+
+function publicOrigins(): string[] {
+  return (process.env.HAUSHALT_PUBLIC_ORIGIN ?? "")
+    .split(",")
+    .map((value) => value.trim().replace(/\/$/, "").toLowerCase())
+    .filter(Boolean);
 }
 
 export async function readJson(request: NextRequest): Promise<Record<string, unknown> | null> {
