@@ -47,7 +47,7 @@ function Dropzone() {
         <p className="font-medium">{t("receipts.drop")}</p>
         <p className="text-sm text-muted-foreground">{t("receipts.dropHint")}</p>
       </div>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap justify-center gap-2">
         <Button onClick={openCamera} disabled={busy}>
           <Camera /> {t("receipts.camera")}
         </Button>
@@ -176,7 +176,7 @@ export function ReceiptList() {
           ))}
         </div>
       </div>
-      <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[22rem_minmax(0,1fr)]">
         <div className="lg:sticky lg:top-24 lg:self-start">
           <Dropzone />
         </div>

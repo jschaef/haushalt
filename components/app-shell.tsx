@@ -115,11 +115,12 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="aurora" aria-hidden />
       <header className="sticky top-0 z-40 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] md:px-6">
         <div className="glass mx-auto flex h-14 max-w-7xl items-center gap-2 rounded-2xl px-3">
-          <Link href="/dashboard" className="flex items-center gap-2 pr-2 font-semibold tracking-tight">
+          <Link href="/dashboard" aria-label={t("app.name")} className="flex shrink-0 items-center gap-2 pr-2 font-semibold tracking-tight">
             <span className="size-7 rounded-lg bg-gradient-to-br from-primary to-chart-4" aria-hidden />
-            <span className="text-gradient text-lg">{t("app.name")}</span>
+            {/* the name gives way on narrow phones (large text in high contrast) */}
+            <span className="text-gradient hidden text-lg min-[420px]:inline">{t("app.name")}</span>
           </Link>
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="hidden min-w-0 items-center gap-1 overflow-x-auto md:flex">
             {NAV.map((item) => (
               <Link
                 key={item.href}
@@ -136,22 +137,23 @@ function Shell({ children }: { children: ReactNode }) {
               </Link>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-1">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             <button
               type="button"
               onClick={() => setPaletteOpen(true)}
               className="hidden h-8 items-center gap-2 rounded-lg border px-2.5 text-xs text-muted-foreground hover:text-foreground sm:flex"
               data-testid="palette-button"
+              aria-label={`${t("common.search")} ⌘K`}
             >
               <Search className="size-3.5" />
-              {t("common.search")}
+              <span className="hidden xl:inline">{t("common.search")}</span>
               <kbd className="rounded border px-1 text-[10px]">⌘K</kbd>
             </button>
             <Button variant="ghost" size="icon" className="sm:hidden" aria-label={t("common.search")} onClick={() => setPaletteOpen(true)}>
               <Search />
             </Button>
-            <Button size="sm" className="hidden md:inline-flex" onClick={openCamera} disabled={busy}>
-              <Camera /> {t("nav.scan")}
+            <Button size="sm" className="hidden md:inline-flex" onClick={openCamera} disabled={busy} aria-label={t("nav.scan")}>
+              <Camera /> <span className="hidden xl:inline">{t("nav.scan")}</span>
             </Button>
             <LanguageToggle />
             <ContrastToggle />

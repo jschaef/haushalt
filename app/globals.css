@@ -150,6 +150,8 @@
   display: none;
 }
 .contrast .glass {
+  /* fully opaque, also where a tile sets a translucent or gradient background */
+  background: var(--background) !important;
   border-width: 2px;
   box-shadow: none;
   /* reset the Tailwind backdrop variables: a hand-written backdrop-filter

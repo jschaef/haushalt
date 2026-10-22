@@ -1,5 +1,6 @@
 "use client";
 
+import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import { ArrowDownRight, ArrowUpRight, Camera, CheckCircle2, ChevronRight, Upload } from "lucide-react";
@@ -234,6 +235,8 @@ function ReviewTile({ index, count }: { index: number; count: number }) {
 
 function DailyChart({ summary }: { summary: Summary }) {
   const { t, locale } = useI18n();
+  const { resolvedTheme } = useTheme();
+  const contrast = resolvedTheme === "contrast";
   const option = useMemo<ChartOption>(() => {
     const tag = locale === "de" ? "de-DE" : "en-GB";
     const label = new Intl.DateTimeFormat(tag, { day: "2-digit", month: "2-digit" });
@@ -253,13 +256,15 @@ function DailyChart({ summary }: { summary: Summary }) {
           data: summary.daily.map((d) => d.cents / 100),
           itemStyle: {
             borderRadius: [6, 6, 2, 2],
-            color: { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: "#8b7dff" }, { offset: 1, color: "#ff6fae" }] },
+            color: contrast
+              ? "#ffe600"
+              : { type: "linear", x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: "#8b7dff" }, { offset: 1, color: "#ff6fae" }] },
           },
           barMaxWidth: 18,
         },
       ],
     };
-  }, [summary, locale]);
+  }, [summary, locale, contrast]);
   return <Chart option={option} className="h-56 w-full" label={t("dash.daily")} />;
 }
 

@@ -31,6 +31,13 @@ test("high-contrast mode: toggle, larger text, no transparency, persists", async
   const glass = page.locator(".glass").first();
   expect(await glass.evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
   expect(await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(0, 0, 0)");
+  // larger text must not push anything off narrow screens
+  for (const path of PAGES) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
+  }
   await page.reload();
   await expect(html).toHaveClass(/\bcontrast\b/);
   await page.getByTestId("contrast-toggle").filter({ visible: true }).click();
