@@ -60,10 +60,11 @@ function ThemeTile() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- avoid a hydration mismatch
     setMounted(true);
   }, []);
-  const options: { value: "dark" | "light" | "system"; label: MessageKey }[] = [
+  const options: { value: "dark" | "light" | "system" | "contrast"; label: MessageKey }[] = [
     { value: "dark", label: "settings.themeDark" },
     { value: "light", label: "settings.themeLight" },
     { value: "system", label: "settings.themeSystem" },
+    { value: "contrast", label: "settings.themeContrast" },
   ];
   return (
     <Tile index={1} title={t("settings.theme")}>

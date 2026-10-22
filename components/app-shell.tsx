@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Camera, Gauge, Landmark, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
+import { Camera, Eye, Gauge, Landmark, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { ScanProvider, useScan } from "@/components/scan";
@@ -41,7 +41,8 @@ function LanguageToggle() {
     <Button
       variant="ghost"
       size="sm"
-      aria-label={next === "en" ? "Switch to English" : "Auf Deutsch umschalten"}
+      // the accessible name starts with the visible text (WCAG 2.5.3)
+      aria-label={next === "en" ? "EN – Switch to English" : "DE – Auf Deutsch umschalten"}
       onClick={() => {
         setLocale(next);
         void api.updateMe({ locale: next }).catch(() => undefined);
@@ -55,11 +56,32 @@ function LanguageToggle() {
 }
 
 function ThemeToggle() {
+  const { t } = useI18n();
   const { resolvedTheme, setTheme } = useTheme();
   return (
-    <Button variant="ghost" size="icon" aria-label="Theme" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>
+    <Button variant="ghost" size="icon" aria-label={t("palette.toggleTheme")} onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}>
       <Sun className="hidden dark:block" />
       <Moon className="dark:hidden" />
+    </Button>
+  );
+}
+
+// One click into the high-contrast mode and back to the previous theme.
+function ContrastToggle() {
+  const { t } = useI18n();
+  const { resolvedTheme, setTheme } = useTheme();
+  const active = resolvedTheme === "contrast";
+  const toggle = () => {
+    if (active) {
+      setTheme(localStorage.getItem("haushalt_theme_before_contrast") ?? "dark");
+    } else {
+      localStorage.setItem("haushalt_theme_before_contrast", resolvedTheme ?? "dark");
+      setTheme("contrast");
+    }
+  };
+  return (
+    <Button variant="ghost" size="icon" aria-label={t("a11y.contrast")} aria-pressed={active} onClick={toggle} data-testid="contrast-toggle">
+      <Eye />
     </Button>
   );
 }
@@ -132,6 +154,7 @@ function Shell({ children }: { children: ReactNode }) {
               <Camera /> {t("nav.scan")}
             </Button>
             <LanguageToggle />
+            <ContrastToggle />
             <ThemeToggle />
             <Button variant="ghost" size="icon" aria-label={t("nav.logout")} onClick={logout}>
               <LogOut />

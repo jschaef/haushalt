@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Camera, Gauge, Landmark, LayoutGrid, Languages, Receipt, Repeat, Search, Settings, SunMoon, Store as StoreIcon } from "lucide-react";
+import { Camera, Eye, Gauge, Landmark, LayoutGrid, Languages, Receipt, Repeat, Search, Settings, SunMoon, Store as StoreIcon } from "lucide-react";
 import { api, type Store } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/provider";
 import { useScan } from "@/components/scan";
@@ -54,7 +54,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       { id: "bank", group: nav, label: t("nav.bank"), icon: <Landmark />, run: go("/bank") },
       { id: "settings", group: nav, label: t("nav.settings"), icon: <Settings />, run: go("/settings") },
       { id: "scan", group: actions, label: t("nav.scan"), icon: <Camera />, run: scan.openCamera },
-      { id: "theme", group: actions, label: t("palette.toggleTheme"), icon: <SunMoon />, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },
+      { id: "theme", group: actions, label: t("palette.toggleTheme"), icon: <SunMoon />, run: () => setTheme(resolvedTheme === "light" ? "dark" : "light") },
+      { id: "contrast", group: actions, label: t("a11y.contrast"), icon: <Eye />, run: () => setTheme(resolvedTheme === "contrast" ? "dark" : "contrast") },
       { id: "language", group: actions, label: t("palette.toggleLanguage"), icon: <Languages />, run: () => setLocale(locale === "de" ? "en" : "de") },
       ...stores.map((store) => ({
         id: `store-${store.id}`,

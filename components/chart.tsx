@@ -19,7 +19,7 @@ export function Chart({ option, className, label }: { option: ChartOption; class
 
   useEffect(() => {
     if (!ref.current) return;
-    const instance = echarts.init(ref.current, resolvedTheme === "dark" ? "dark" : undefined, { renderer: "canvas" });
+    const instance = echarts.init(ref.current, resolvedTheme === "light" ? undefined : "dark", { renderer: "canvas" });
     chart.current = instance;
     const observer = new ResizeObserver(() => instance.resize());
     observer.observe(ref.current);
@@ -31,7 +31,9 @@ export function Chart({ option, className, label }: { option: ChartOption; class
   }, [resolvedTheme]);
 
   useEffect(() => {
-    chart.current?.setOption({ backgroundColor: "transparent", ...option }, { notMerge: true });
+    // high contrast: white, larger chart texts
+    const contrast = resolvedTheme === "contrast" ? { textStyle: { color: "#ffffff", fontSize: 14 } } : {};
+    chart.current?.setOption({ backgroundColor: "transparent", ...contrast, ...option }, { notMerge: true });
   }, [option, resolvedTheme]);
 
   return <div ref={ref} role="img" aria-label={label} className={className} />;

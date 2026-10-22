@@ -2,7 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* the high-contrast theme is dark as well */
+@custom-variant dark (&:is(.dark *, .contrast *));
 
 @theme inline {
   --color-background: var(--background);
@@ -44,6 +45,7 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* text colours (positive, negative, chart-3) meet WCAG AA on white */
 :root {
   --background: oklch(0.985 0.004 270);
   --foreground: oklch(0.17 0.02 270);
@@ -65,13 +67,13 @@
   --ring: oklch(0.6 0.18 275);
   --chart-1: oklch(0.6 0.2 275);
   --chart-2: oklch(0.7 0.16 165);
-  --chart-3: oklch(0.75 0.16 70);
+  --chart-3: oklch(0.58 0.14 65);
   --chart-4: oklch(0.65 0.2 350);
   --chart-5: oklch(0.65 0.15 230);
   --glass: oklch(1 0 0 / 65%);
   --glass-border: oklch(0.2 0.02 270 / 8%);
-  --positive: oklch(0.6 0.15 155);
-  --negative: oklch(0.6 0.2 25);
+  --positive: oklch(0.5 0.13 155);
+  --negative: oklch(0.52 0.2 25);
   --aurora-1: oklch(0.8 0.12 275 / 55%);
   --aurora-2: oklch(0.85 0.1 175 / 45%);
   --aurora-3: oklch(0.85 0.12 340 / 40%);
@@ -109,6 +111,74 @@
   --aurora-1: oklch(0.45 0.2 275 / 45%);
   --aurora-2: oklch(0.45 0.12 175 / 30%);
   --aurora-3: oklch(0.45 0.18 340 / 30%);
+}
+
+/* High-contrast mode for people with low vision: black/white/yellow,
+   WCAG AAA contrast, larger text, no transparency, blur or motion. */
+.contrast {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #000000;
+  --card-foreground: #ffffff;
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+  --primary: #ffe600;
+  --primary-foreground: #000000;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ffffff;
+  --muted: #1a1a1a;
+  --muted-foreground: #f0f0f0;
+  --accent: #333333;
+  --accent-foreground: #ffffff;
+  --destructive: #ff8a8a;
+  --border: #ffffff;
+  --input: #ffffff;
+  --ring: #ffe600;
+  --chart-1: #ffe600;
+  --chart-2: #5ce1ff;
+  --chart-3: #ffb347;
+  --chart-4: #ff8ad8;
+  --chart-5: #9dff8a;
+  --glass: #000000;
+  --glass-border: #ffffff;
+  --positive: #7dff9b;
+  --negative: #ff9b9b;
+  --radius: 0.5rem;
+  font-size: 118.75%;
+}
+.contrast .aurora {
+  display: none;
+}
+.contrast .glass {
+  border-width: 2px;
+  box-shadow: none;
+  /* reset the Tailwind backdrop variables: a hand-written backdrop-filter
+     pair loses its unprefixed half in the minifier (see .glass) */
+  --tw-backdrop-blur: ;
+  --tw-backdrop-saturate: ;
+}
+.contrast .text-gradient {
+  background: none;
+  color: var(--primary);
+}
+.contrast a:not([role="tab"]):not([data-slot="button"]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.contrast :focus-visible {
+  outline: 3px solid var(--ring) !important;
+  outline-offset: 2px;
+}
+.contrast *,
+.contrast *::before,
+.contrast *::after {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+.contrast ::view-transition-group(*),
+.contrast ::view-transition-old(*),
+.contrast ::view-transition-new(*) {
+  animation: none !important;
 }
 
 @layer base {
