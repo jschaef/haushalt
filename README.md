@@ -24,7 +24,7 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
   transitions, command palette (Ctrl/⌘ K), swipe gestures on the phone.
 - **Accessible:** light, dark and a high-contrast mode for low vision (larger
   text, no transparency or motion); every page is checked automatically
-  against WCAG 2.1 AA in all three modes.
+  against WCAG 2.2 AA (EN 301 549) in all three modes.
 
 ## Run with containers
 
