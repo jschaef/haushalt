@@ -49,6 +49,12 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 - Browser → Next.js only. `app/api/v1/[...path]/route.ts` forwards to the API
   (address `HAUSHALT_API_URL`, read at runtime) and adds the bearer token from
   the httpOnly cookie `haushalt_session`. Login/signup/logout: `app/api/auth/*`.
+- Operation (Jochen, 2026-10-22): self-hosted with PostgreSQL in compose,
+  access via the tailnet (`tailscale serve` -> HTTPS, web bound to
+  127.0.0.1, `HAUSHALT_PUBLIC_ORIGIN` for the Origin check), receipt files
+  deleted after one year (`receipts.expire_files`, daily). Tests run on
+  SQLite; set `HAUSHALT_TEST_DATABASE_URL` to run them on PostgreSQL (CI
+  job `backend-postgres`). PostgreSQL enforces string lengths - truncate.
 - All household members share all data; receipts remember the uploader.
 - Money is integer cents everywhere. Statistics (`backend/haushalt_api/stats.py`):
   calendar days, only confirmed receipts, recurring costs spread over their

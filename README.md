@@ -29,16 +29,34 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
 ## Run with containers
 
 ```bash
-cp deployment/.env.example deployment/.env    # set ANTHROPIC_API_KEY
+cp deployment/.env.example deployment/.env    # set ANTHROPIC_API_KEY, HAUSHALT_DB_PASSWORD
 docker compose -f deployment/compose.yaml up -d --build   # or: podman compose
 ```
 
-The app listens on port 3200. Login cookies are `Secure` by default, so put
-HTTPS in front (reverse proxy or a VPN that provides certificates). For a quick
-plain-HTTP test: `HAUSHALT_COOKIE_SECURE=false docker compose … up`.
-The first visitor creates the household account; more members are added in
-the settings. Data (SQLite database, receipt files) lives in the
-`haushalt-data` volume.
+Three containers: PostgreSQL (`db`), the API and the web app. Only the web app
+is published, and only on `127.0.0.1:3200` of the host. The first visitor
+creates the household account; more members are added in the settings.
+
+### Access from the tailnet
+
+Login cookies are `Secure`, so the app needs HTTPS. Tailscale provides it:
+
+```bash
+sudo tailscale serve --bg 3200     # on the host running the containers
+```
+
+The app is then at `https://<machine>.<tailnet>.ts.net` for devices in the
+tailnet only. Put exactly that address into `HAUSHALT_PUBLIC_ORIGIN` in
+`deployment/.env` (the login checks where requests come from) and restart the
+web container. (Command from the Tailscale documentation as known to the
+author; not tested in this repository's CI.)
+
+### Data and backups
+
+- Database: volume `haushalt-pg`. Backup: `docker compose -f deployment/compose.yaml exec db pg_dump -U haushalt haushalt > haushalt.sql`
+- Receipt files and the token secret: volume `haushalt-data`.
+- Receipt photos are deleted one year after the purchase date
+  (`HAUSHALT_RECEIPT_PHOTO_DAYS`); positions and amounts stay.
 
 ## Develop
 
@@ -60,16 +78,18 @@ Tests: `backend/.venv/bin/python -m pytest` (in `backend/`), `npm test`,
 | `HAUSHALT_RECEIPT_EFFORT` | `low` | Effort level for the model |
 | `HAUSHALT_EXTRACTOR` | `claude` | `fake` returns a fixed receipt (tests) |
 | `HAUSHALT_DATA_DIR` | `backend/data` | Database, secret, receipt files |
-| `HAUSHALT_DATABASE_URL` | SQLite in data dir | Any SQLAlchemy URL |
+| `HAUSHALT_DATABASE_URL` | SQLite in data dir | e.g. `postgresql+psycopg://user:pw@db:5432/haushalt` (compose sets it) |
 | `HAUSHALT_SECRET` | random, kept in data dir | Signs login tokens |
 | `HAUSHALT_ALLOW_SIGNUP` | `false` | Self-registration after the first user |
 | `HAUSHALT_MAX_UPLOAD_MB` | `20` | Per file |
 | `HAUSHALT_API_DOCS` | `false` | OpenAPI pages under `/api/v1/docs` |
+| `HAUSHALT_RECEIPT_PHOTO_DAYS` | `365` | Days after purchase until receipt files are deleted, `0` = never |
 | `HAUSHALT_POLL_MINUTES` | `15` | Polling interval for meter devices, `0` = off |
 | `HAUSHALT_POLL_ALLOW_PUBLIC` | `false` | Allow polling addresses outside the local network |
 
 Frontend: `HAUSHALT_API_URL` (default `http://127.0.0.1:8300`),
-`HAUSHALT_COOKIE_SECURE` (default `true` in production).
+`HAUSHALT_COOKIE_SECURE` (default `true` in production),
+`HAUSHALT_PUBLIC_ORIGIN` (HTTPS address the app is opened at, comma-separated).
 
 ## Roadmap
 

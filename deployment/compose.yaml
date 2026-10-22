@@ -1,10 +1,28 @@
 # Run with podman compose or docker compose from the repository root:
-#   cp deployment/.env.example deployment/.env   # set ANTHROPIC_API_KEY
+#   cp deployment/.env.example deployment/.env   # set ANTHROPIC_API_KEY and HAUSHALT_DB_PASSWORD
 #   docker compose -f deployment/compose.yaml up -d --build
-# Only the web container is published; the API stays on the internal network.
+# Only the web container is published, and only on localhost: `tailscale
+# serve` (see README) makes it reachable in the tailnet with HTTPS. API and
+# database stay on the internal network.
 name: haushalt
 
 services:
+  db:
+    image: docker.io/library/postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: haushalt
+      POSTGRES_USER: haushalt
+      POSTGRES_PASSWORD: ${HAUSHALT_DB_PASSWORD:?set HAUSHALT_DB_PASSWORD in deployment/.env}
+    volumes:
+      - haushalt-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U haushalt -d haushalt"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    security_opt: [no-new-privileges:true]
+
   api:
     build:
       context: ..
@@ -16,8 +34,12 @@ services:
         required: false
     environment:
       HAUSHALT_DATA_DIR: /data
+      HAUSHALT_DATABASE_URL: postgresql+psycopg://haushalt:${HAUSHALT_DB_PASSWORD}@db:5432/haushalt
     volumes:
       - haushalt-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
     read_only: true
     tmpfs:
       - /tmp
@@ -32,11 +54,13 @@ services:
     restart: unless-stopped
     environment:
       HAUSHALT_API_URL: http://api:8300
-      # Secure cookies need HTTPS in front of the app (reverse proxy or VPN
-      # with certificates). Set to false only for plain-HTTP tests.
+      # Secure cookies need HTTPS in front of the app (tailscale serve or a
+      # reverse proxy). Set to false only for plain-HTTP tests.
       HAUSHALT_COOKIE_SECURE: ${HAUSHALT_COOKIE_SECURE:-true}
+      # the HTTPS address the app is opened at, e.g. https://<machine>.<tailnet>.ts.net
+      HAUSHALT_PUBLIC_ORIGIN: ${HAUSHALT_PUBLIC_ORIGIN:-}
     ports:
-      - "${HAUSHALT_PORT:-3200}:3200"
+      - "${HAUSHALT_BIND:-127.0.0.1}:${HAUSHALT_PORT:-3200}:3200"
     depends_on:
       api:
         condition: service_healthy
@@ -48,3 +72,4 @@ services:
 
 volumes:
   haushalt-data:
+  haushalt-pg:
