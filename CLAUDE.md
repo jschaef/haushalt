@@ -62,6 +62,11 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   detection by whole words. Booking status decides counting: only `counted`
   enters the statistics (`receipt`/`fixed` are counted through the receipt or
   recurring cost). Deleting those reopens linked bookings.
+- Themes (next-themes): `light`, `dark`, `contrast` (low-vision mode in
+  `app/globals.css`: black/white/yellow, 118.75 % text, opaque, no motion via
+  `components/motion-mode.tsx`). `e2e/a11y.spec.ts` runs axe (WCAG 2.1 AA,
+  serious/critical) on every page in all three themes and fails on sideways
+  scrolling in high contrast - add new pages to its PAGES list.
 - i18n: `lib/i18n/messages.ts` (de reference, en typed against it), cookie `haushalt_locale`.
 
 ## Security
@@ -77,6 +82,8 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 
 ## Pitfalls
 
+- Hand-written `backdrop-filter` pairs lose their unprefixed half in the CSS
+  minifier: use Tailwind `backdrop-*` utilities or the `--tw-backdrop-*` vars.
 - Next.js 16: `proxy.ts` is the middleware. Read `node_modules/next/dist/docs/`.
 - A reverse proxy must pass the Host header with port (Origin check).
 - `HAUSHALT_COOKIE_SECURE=true` (default in production) needs HTTPS, else
