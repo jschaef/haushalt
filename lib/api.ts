@@ -77,9 +77,16 @@ export type Meter = {
   meter_number: string;
   category_id: number | null;
   last_reading: { read_on: string; value: number } | null;
+  has_device_token: boolean;
+  source_url: string;
+  source_path: string;
+  last_ingest_at: string | null;
+  last_ingest_error: string;
 };
 
-export type MeterReading = { id: number; read_on: string; value: number; source: "manual" | "photo" | "bill" };
+export type SourcePreset = { url: string; path: string };
+
+export type MeterReading = { id: number; read_on: string; value: number; source: "manual" | "photo" | "bill" | "device" };
 
 export type Tariff = { id: number; valid_from: string; unit_price_ct: number; base_fee_monthly_cents: number };
 
@@ -132,7 +139,7 @@ export type UtilityBill = {
   error: string;
 };
 
-type MeterInput = Omit<Meter, "id" | "last_reading">;
+type MeterInput = Pick<Meter, "name" | "kind" | "unit" | "meter_number" | "category_id">;
 
 export type BookingStatus = "review" | "receipt" | "fixed" | "counted" | "ignored";
 
@@ -232,6 +239,12 @@ export const api = {
   createMeter: (body: MeterInput) => request<Meter>("meters", json("POST", body)),
   updateMeter: (id: number, body: MeterInput) => request<Meter>(`meters/${id}`, json("PUT", body)),
   deleteMeter: (id: number) => request<void>(`meters/${id}`, { method: "DELETE" }),
+  sourcePresets: () => request<Record<string, SourcePreset>>("meters/sources/presets"),
+  createDeviceToken: (id: number) => request<{ token: string }>(`meters/${id}/device-token`, { method: "POST" }),
+  revokeDeviceToken: (id: number) => request<void>(`meters/${id}/device-token`, { method: "DELETE" }),
+  setSource: (id: number, body: { source_url: string; source_path: string }) =>
+    request<{ source_url: string; source_path: string }>(`meters/${id}/source`, json("PUT", body)),
+  pollMeter: (id: number) => request<{ read_on: string; value: number }>(`meters/${id}/poll`, { method: "POST" }),
   meterSummary: (id: number) => request<MeterSummary>(`meters/${id}/summary`),
   readings: (meterId: number) => request<MeterReading[]>(`meters/${meterId}/readings`),
   addReading: (meterId: number, body: Omit<MeterReading, "id">) =>

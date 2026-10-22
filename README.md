@@ -65,6 +65,8 @@ Tests: `backend/.venv/bin/python -m pytest` (in `backend/`), `npm test`,
 | `HAUSHALT_ALLOW_SIGNUP` | `false` | Self-registration after the first user |
 | `HAUSHALT_MAX_UPLOAD_MB` | `20` | Per file |
 | `HAUSHALT_API_DOCS` | `false` | OpenAPI pages under `/api/v1/docs` |
+| `HAUSHALT_POLL_MINUTES` | `15` | Polling interval for meter devices, `0` = off |
+| `HAUSHALT_POLL_ALLOW_PUBLIC` | `false` | Allow polling addresses outside the local network |
 
 Frontend: `HAUSHALT_API_URL` (default `http://127.0.0.1:8300`),
 `HAUSHALT_COOKIE_SECURE` (default `true` in production).
@@ -74,4 +76,5 @@ Frontend: `HAUSHALT_API_URL` (default `http://127.0.0.1:8300`),
 1. ✅ Receipts → review → dashboard, fixed costs, household, DE/EN
 2. ✅ Utilities in depth: meter readings by photo, tariffs, settlement forecast, annual bills
 3. ✅ Bank statement import (CSV/CAMT) and automatic matching with receipts
-4. Smart meter import
+4. ✅ Automatic meter readings: device push with a token, polling of local devices
+   (presets for Tasmota IR reading heads and AI-on-the-edge cameras)

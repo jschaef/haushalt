@@ -62,6 +62,10 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   costs and the settlement forecast live on the utilities page (no double
   counting). New columns on existing tables need an entry in
   `db._LATER_COLUMNS` (create_all never alters tables).
+- Automatic meter readings (`smartmeter.py`, `smartmeter_api.py`): device
+  token push to `/api/v1/ingest/reading` (the gateway's only path without
+  session/Origin, it forwards the device's Authorization header) and polling
+  of local devices (SSRF-limited, http pinned to the checked IP).
 - Bank (`banking.py`, `banking_api.py`): CAMT via defusedxml, CSV header
   detection by whole words. Booking status decides counting: only `counted`
   enters the statistics (`receipt`/`fixed` are counted through the receipt or

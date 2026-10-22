@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { Camera, ChevronDown, ChevronRight, Droplet, ExternalLink, Flame, Gauge, Pencil, Plus, Thermometer, Trash2, Upload, Zap } from "lucide-react";
+import { Camera, ChevronDown, Copy, ChevronRight, Droplet, ExternalLink, Flame, Gauge, Pencil, Plus, Thermometer, Trash2, Upload, Zap } from "lucide-react";
 import { toast } from "sonner";
 import { Chart, type ChartOption } from "@/components/chart";
 import { Tile } from "@/components/bento";
@@ -16,6 +16,7 @@ import {
   type Meter,
   type MeterPhotoResult,
   type MeterSummary,
+  type SourcePreset,
   type UtilityBill,
   type UtilityKind,
 } from "@/lib/api";
@@ -38,7 +39,7 @@ const KIND_ICON: Record<UtilityKind, typeof Zap> = {
 };
 
 type Translate = (key: MessageKey, vars?: Record<string, string | number>) => string;
-type MeterBody = Omit<Meter, "id" | "last_reading">;
+type MeterBody = Parameters<typeof api.createMeter>[0];
 
 function today(): string {
   const now = new Date();
@@ -580,6 +581,202 @@ function InstalmentSection({ meter, onChanged }: { meter: Meter; onChanged: () =
   );
 }
 
+/* ---------- automatic readings ---------- */
+
+const PRESET_KEYS = ["tasmota", "ai_on_the_edge"] as const;
+
+function dateTime(iso: string, locale: Locale): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return new Intl.DateTimeFormat(locale === "de" ? "de-DE" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
+function AutoSection({ meter, onChanged }: { meter: Meter; onChanged: () => Promise<void> }) {
+  const { t, locale } = useI18n();
+  const uid = useId();
+  const presets = useData(() => api.sourcePresets(), "source-presets");
+  const [token, setToken] = useState<string | null>(null);
+  const [preset, setPreset] = useState("");
+  const [url, setUrl] = useState(meter.source_url);
+  const [path, setPath] = useState(meter.source_path);
+  const [busy, setBusy] = useState(false);
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    try {
+      await action();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const createToken = () =>
+    run(async () => {
+      const result = await api.createDeviceToken(meter.id);
+      setToken(result.token);
+      await onChanged();
+    });
+
+  const revokeToken = () => {
+    if (!window.confirm(t("util.auto.token.revokeConfirm"))) return;
+    return run(async () => {
+      await api.revokeDeviceToken(meter.id);
+      setToken(null);
+      toast.success(t("util.auto.token.revoked"));
+      await onChanged();
+    });
+  };
+
+  async function copy() {
+    if (!token) return;
+    try {
+      await navigator.clipboard.writeText(token);
+      toast.success(t("util.auto.token.copied"));
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  }
+
+  function pickPreset(key: string) {
+    setPreset(key);
+    const found: SourcePreset | undefined = presets.data?.[key];
+    if (found) {
+      setUrl(found.url);
+      setPath(found.path);
+    }
+  }
+
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    return run(async () => {
+      await api.setSource(meter.id, { source_url: url.trim(), source_path: path.trim() });
+      toast.success(t("util.auto.saved"));
+      await onChanged();
+    });
+  };
+
+  const poll = () =>
+    run(async () => {
+      try {
+        const result = await api.pollMeter(meter.id);
+        toast.success(t("util.auto.polled", { value: num(result.value, locale, 3), unit: meter.unit }));
+      } finally {
+        await onChanged();
+      }
+    });
+
+  const off = () =>
+    run(async () => {
+      await api.setSource(meter.id, { source_url: "", source_path: "" });
+      setUrl("");
+      setPath("");
+      setPreset("");
+      toast.success(t("util.auto.offDone"));
+      await onChanged();
+    });
+
+  const example = token
+    ? `curl -X POST ${window.location.origin}/api/v1/ingest/reading -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" -d '{"value": 12345.6}'`
+    : "";
+
+  return (
+    <div className="space-y-4" data-testid="auto-section">
+      {(meter.last_ingest_at || meter.last_ingest_error) && (
+        <div className="space-y-1 text-xs">
+          {meter.last_ingest_at && (
+            <p className="text-muted-foreground" data-testid="last-ingest">
+              {t("util.auto.lastAt", { time: dateTime(meter.last_ingest_at, locale) })}
+            </p>
+          )}
+          {meter.last_ingest_error && (
+            <p role="status" className="break-words text-destructive" data-testid="last-ingest-error">
+              {t("util.auto.lastError", { error: meter.last_ingest_error })}
+            </p>
+          )}
+        </div>
+      )}
+
+      <section className="space-y-2" aria-label={t("util.auto.push.title")}>
+        <h4 className="text-sm font-medium">{t("util.auto.push.title")}</h4>
+        <p className="text-xs text-muted-foreground">{t("util.auto.push.hint")}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={createToken}>
+            {meter.has_device_token ? t("util.auto.token.renew") : t("util.auto.token.create")}
+          </Button>
+          {meter.has_device_token && (
+            <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={revokeToken}>
+              {t("util.auto.token.revoke")}
+            </Button>
+          )}
+        </div>
+        {token && (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">{t("util.auto.token.once")}</p>
+            <div className="flex gap-2">
+              <Input id={`${uid}-token`} aria-label={t("util.auto.token.label")} readOnly value={token} className="min-w-0 font-mono text-xs" />
+              <Button type="button" variant="outline" size="sm" onClick={copy}>
+                <Copy /> {t("util.auto.token.copy")}
+              </Button>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`${uid}-example`}>{t("util.auto.token.example")}</Label>
+              <textarea
+                id={`${uid}-example`}
+                readOnly
+                rows={4}
+                value={example}
+                className="w-full resize-none rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-xs break-all outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              />
+            </div>
+          </div>
+        )}
+      </section>
+
+      <form onSubmit={save} className="space-y-2" aria-label={t("util.auto.pull.title")}>
+        <h4 className="text-sm font-medium">{t("util.auto.pull.title")}</h4>
+        <p className="text-xs text-muted-foreground">{t("util.auto.pull.hint")}</p>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${uid}-preset`}>{t("util.auto.preset")}</Label>
+          <select id={`${uid}-preset`} value={preset} onChange={(e) => pickPreset(e.target.value)} className={SELECT_CLASS}>
+            <option value="">{t("util.auto.preset.custom")}</option>
+            {PRESET_KEYS.filter((k) => presets.data?.[k]).map((k) => (
+              <option key={k} value={k}>
+                {t(`util.auto.preset.${k}`)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${uid}-url`}>{t("util.auto.url")}</Label>
+          <Input id={`${uid}-url`} value={url} onChange={(e) => setUrl(e.target.value)} aria-describedby={`${uid}-urlhint`} inputMode="url" autoCapitalize="none" spellCheck={false} />
+          {url.includes("<device>") && (
+            <p id={`${uid}-urlhint`} className="text-xs text-muted-foreground">
+              {t("util.auto.deviceHint")}
+            </p>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${uid}-path`}>{t("util.auto.path")}</Label>
+          <Input id={`${uid}-path`} value={path} onChange={(e) => setPath(e.target.value)} autoCapitalize="none" spellCheck={false} />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="submit" size="sm" disabled={busy || url.trim() === ""}>
+            {t("util.auto.save")}
+          </Button>
+          <Button type="button" variant="outline" size="sm" disabled={busy || meter.source_url === ""} onClick={poll}>
+            {t("util.auto.poll")}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" disabled={busy || meter.source_url === ""} onClick={off}>
+            {t("util.auto.off")}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function MeterCard({
   index,
   meter,
@@ -596,6 +793,7 @@ function MeterCard({
   const { t, locale } = useI18n();
   const summary = useData(() => api.meterSummary(meter.id), `summary:${meter.id}:${version}`);
   const [open, setOpen] = useState(false);
+  const [autoOpen, setAutoOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const Icon = KIND_ICON[meter.kind];
   const s = summary.data;
@@ -696,9 +894,19 @@ function MeterCard({
         </>
       )}
 
-      <Button variant="outline" size="sm" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="self-start">
-        {open ? <ChevronDown /> : <ChevronRight />} {t("util.details")}
-      </Button>
+      <div className="flex flex-wrap gap-2 self-start">
+        <Button variant="outline" size="sm" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? <ChevronDown /> : <ChevronRight />} {t("util.details")}
+        </Button>
+        <Button variant="outline" size="sm" aria-expanded={autoOpen} onClick={() => setAutoOpen((v) => !v)}>
+          {autoOpen ? <ChevronDown /> : <ChevronRight />} {t("util.auto.title")}
+        </Button>
+      </div>
+      {autoOpen && (
+        <div className="border-t border-border/60 pt-3">
+          <AutoSection meter={meter} onChanged={changed} />
+        </div>
+      )}
       {open && (
         <div className="space-y-5 border-t border-border/60 pt-3">
           <ReadingsSection meter={meter} onChanged={changed} />

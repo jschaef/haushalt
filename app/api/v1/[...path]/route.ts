@@ -12,6 +12,10 @@ const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "if-none-match"];
 const FORWARDED_RESPONSE_HEADERS = ["content-type", "cache-control", "etag", "content-length"];
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
+// Meter devices push readings with their own device token instead of a
+// browser session: no cookie, no Origin. Only this path and method pass the
+// client's Authorization header on; a session token is never added to it.
+const DEVICE_INGEST = "ingest/reading";
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 async function forward(request: NextRequest, { params }: RouteContext<"/api/v1/[...path]">) {
@@ -20,12 +24,16 @@ async function forward(request: NextRequest, { params }: RouteContext<"/api/v1/[
   if (!path.every((segment) => SAFE_SEGMENT.test(segment))) {
     return NextResponse.json({ detail: "Invalid path" }, { status: 400 });
   }
-  if (UNSAFE_METHODS.has(request.method) && !sameOrigin(request)) {
+  const joined = path.join("/");
+  const device = joined === DEVICE_INGEST;
+  if (device && request.method !== "POST") {
+    return NextResponse.json({ detail: "Method not allowed" }, { status: 405 });
+  }
+  if (!device && UNSAFE_METHODS.has(request.method) && !sameOrigin(request)) {
     return NextResponse.json({ detail: "Cross-site request rejected" }, { status: 403 });
   }
-  const joined = path.join("/");
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (!token && !PUBLIC.has(joined)) {
+  const token = device ? undefined : request.cookies.get(SESSION_COOKIE)?.value;
+  if (!token && !device && !PUBLIC.has(joined)) {
     return NextResponse.json({ detail: "Not logged in" }, { status: 401 });
   }
   const headers = new Headers();
@@ -34,6 +42,11 @@ async function forward(request: NextRequest, { params }: RouteContext<"/api/v1/[
     if (value) headers.set(name, value);
   }
   if (token) headers.set("authorization", `Bearer ${token}`);
+  if (device) {
+    const deviceAuth = request.headers.get("authorization");
+    if (!deviceAuth) return NextResponse.json({ detail: "Device token required" }, { status: 401 });
+    headers.set("authorization", deviceAuth);
+  }
 
   const hasBody = !["GET", "HEAD"].includes(request.method) && request.body;
   let upstream: Response;
