@@ -134,6 +134,34 @@ export type UtilityBill = {
 
 type MeterInput = Omit<Meter, "id" | "last_reading">;
 
+export type BookingStatus = "review" | "receipt" | "fixed" | "counted" | "ignored";
+
+export type BankTransaction = {
+  id: number;
+  booked_on: string;
+  // negative: money going out
+  amount_cents: number;
+  currency: string;
+  counterparty: string;
+  iban: string;
+  purpose: string;
+  status: BookingStatus;
+  receipt_id: number | null;
+  recurring_id: number | null;
+  category_id: number | null;
+};
+
+export type ImportResult = { read: number; imported: number; duplicates: number } & Record<BookingStatus, number>;
+
+export type ReceiptCandidate = { id: number; store_name: string; purchased_on: string | null; total_cents: number; store_matches: boolean };
+
+export type BookingDecision = {
+  status: BookingStatus;
+  receipt_id?: number | null;
+  recurring_id?: number | null;
+  category_id?: number | null;
+};
+
 export type User = { id: number; username: string; display_name: string; locale: "de" | "en" };
 
 export type Store = { id: number; name: string; default_category_id: number | null; receipts: number; total_cents: number };
@@ -227,4 +255,15 @@ export const api = {
   applyBill: (id: number) => request<{ tariff: boolean; instalment: boolean }>(`bills/${id}/apply`, { method: "POST" }),
   deleteBill: (id: number) => request<void>(`bills/${id}`, { method: "DELETE" }),
   billFileUrl: (id: number) => `/api/v1/bills/${id}/file`,
+  importStatement: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<ImportResult>("bank/import", { method: "POST", body: form });
+  },
+  transactions: (status?: BookingStatus) =>
+    request<BankTransaction[]>(status ? `bank/transactions?status=${status}` : "bank/transactions"),
+  candidates: (id: number) => request<ReceiptCandidate[]>(`bank/transactions/${id}/candidates`),
+  decide: (id: number, decision: BookingDecision) => request<BankTransaction>(`bank/transactions/${id}`, json("PATCH", decision)),
+  rematch: () => request<{ matched: number }>("bank/rematch", { method: "POST" }),
+  deleteTransaction: (id: number) => request<void>(`bank/transactions/${id}`, { method: "DELETE" }),
 };

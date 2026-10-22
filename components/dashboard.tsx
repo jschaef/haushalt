@@ -59,6 +59,8 @@ export function Dashboard() {
   const summary = useData(() => api.summary(range), `${range}:${version}`);
   const drafts = useData(() => api.receipts("draft"), `drafts:${version}`);
   const recent = useData(() => api.receipts("confirmed"), `recent:${version}`);
+  const bank = useData(() => api.transactions("review"), `bank:${version}`);
+  const bankCount = bank.data?.length ?? 0;
   const fmt = useCallback((cents: number) => money(cents, locale), [locale]);
   const s = summary.data;
 
@@ -114,7 +116,18 @@ export function Dashboard() {
 
           <ReviewTile index={5} count={drafts.data?.length ?? 0} />
 
-          <Tile index={6} className="col-span-2 justify-between md:col-span-3 bg-gradient-to-br from-chart-2/15 to-primary/10">
+          {bankCount > 0 && (
+            <Tile index={6} title={t("bank.dashTitle")} testId="tile-bank">
+              <Link href="/bank" className="group flex flex-1 flex-col justify-between gap-2">
+                <span className="text-3xl font-semibold text-chart-3">{bankCount}</span>
+                <span className="flex items-center text-xs text-muted-foreground group-hover:text-foreground">
+                  {t("bank.dashHint", { n: bankCount })} <ChevronRight className="size-3 shrink-0" />
+                </span>
+              </Link>
+            </Tile>
+          )}
+
+          <Tile index={6} className={cn("col-span-2 justify-between bg-gradient-to-br from-chart-2/15 to-primary/10", bankCount > 0 ? "md:col-span-2" : "md:col-span-3")}>
             <div>
               <div className="text-lg font-semibold">{t("nav.scan")}</div>
               <p className="text-sm text-muted-foreground">{t("receipts.dropHint")}</p>

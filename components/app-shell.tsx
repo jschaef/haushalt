@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Camera, Gauge, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
+import { Camera, Gauge, Landmark, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { ScanProvider, useScan } from "@/components/scan";
@@ -19,12 +19,13 @@ const NAV: { href: string; label: MessageKey; icon: typeof LayoutGrid }[] = [
   { href: "/receipts", label: "nav.receipts", icon: Receipt },
   { href: "/fixed", label: "nav.fixed", icon: Repeat },
   { href: "/utilities", label: "nav.utilities", icon: Gauge },
+  { href: "/bank", label: "nav.bank", icon: Landmark },
   { href: "/settings", label: "nav.settings", icon: Settings },
 ];
 
-// phone tab bar: two links, the camera, two links; fixed costs are reached
-// from the utilities page and the command palette
-const TABS = NAV.filter((item) => item.href !== "/fixed");
+// phone tab bar: two links, the camera, two links; fixed costs and the bank
+// are reached from the utilities page, the dashboard and the command palette
+const TABS = NAV.filter((item) => item.href !== "/fixed" && item.href !== "/bank");
 
 async function logout() {
   await fetch("/api/auth/logout", { method: "POST" });
