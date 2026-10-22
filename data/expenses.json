@@ -1,0 +1,42 @@
+[
+  {
+    "id": "sample-water",
+    "date": "2026-10-01",
+    "store": "Stadtwerke",
+    "category": "utilities",
+    "amount": "42.15",
+    "description": "Water and sewage"
+  },
+  {
+    "id": "sample-gas",
+    "date": "2026-10-02",
+    "store": "Gas AG",
+    "category": "utilities",
+    "amount": "76.80",
+    "description": "House gas bill"
+  },
+  {
+    "id": "sample-rent",
+    "date": "2026-10-03",
+    "store": "Home Rental",
+    "category": "household",
+    "amount": "980.00",
+    "description": "Monthly rent"
+  },
+  {
+    "id": "sample-school",
+    "date": "2026-10-06",
+    "store": "Kinderwelt",
+    "category": "children",
+    "amount": "58.25",
+    "description": "School supplies for daughters"
+  },
+  {
+    "id": "sample-life",
+    "date": "2026-10-08",
+    "store": "Lidl",
+    "category": "lifestyle",
+    "amount": "64.99",
+    "description": "Groceries and personal care"
+  }
+]

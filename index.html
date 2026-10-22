@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Household Budget</title>
+    <style>
+      :root {
+        --bg: #f7f7f7;
+        --panel: #ffffff;
+        --primary: #1f5f8b;
+        --accent: #e9f2f8;
+        --text: #203040;
+        --muted: #586875;
+        --border: #dfe8ef;
+        --success: #1b7f5a;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      .container {
+        max-width: 1100px;
+        margin: 32px auto;
+        padding: 0 18px;
+      }
+
+      h1 {
+        margin-bottom: 16px;
+        font-size: 2.1rem;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin: 24px 0 28px;
+      }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 18px 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+      }
+
+      .card h2 {
+        margin: 0 0 8px;
+        font-size: 0.9rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .amount {
+        margin: 0;
+        font-size: 1.8rem;
+        font-weight: 700;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+        gap: 24px;
+      }
+
+      form {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+
+      label {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+
+      input, select, textarea, button {
+        font: inherit;
+      }
+
+      input, select, textarea {
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: white;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 80px;
+      }
+
+      button {
+        background: var(--primary);
+        color: white;
+        border: 0;
+        border-radius: 8px;
+        padding: 11px 16px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+
+      th, td {
+        text-align: left;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      th {
+        background: var(--accent);
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .badge {
+        display: inline-block;
+        border-radius: 999px;
+        background: var(--accent);
+        color: var(--primary);
+        padding: 6px 10px;
+        font-weight: 700;
+        font-size: 0.8rem;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 780px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Household & Lifestyle Expense Tracker</h1>
+
+      <div class="summary">
+        <div class="card">
+          <h2>Total spend</h2>
+          <p id="total-spend" class="amount">€0.00</p>
+        </div>
+        <div class="card">
+          <h2>Expenses</h2>
+          <p id="expense-count" class="amount">0</p>
+        </div>
+        <div class="card">
+          <h2>Top category</h2>
+          <p id="top-category" class="amount">-</p>
+        </div>
+      </div>
+
+      <div class="layout">
+        <form id="expense-form">
+          <div class="field">
+            <label for="date">Date</label>
+            <input id="date" name="date" type="date" required />
+          </div>
+
+          <div class="field">
+            <label for="store">Store</label>
+            <input id="store" name="store" type="text" placeholder="e.g. Lidl, Stadtwerke, Rent" required />
+          </div>
+
+          <div class="field">
+            <label for="category">Category</label>
+            <select id="category" name="category" required>
+              <option value="household">Household</option>
+              <option value="utilities">Utilities</option>
+              <option value="insurance">Insurance</option>
+              <option value="children">Children</option>
+              <option value="lifestyle">Lifestyle</option>
+              <option value="transport">Transport</option>
+              <option value="food">Food</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="amount">Amount (€)</label>
+            <input id="amount" name="amount" type="number" min="0.01" step="0.01" placeholder="0.00" required />
+          </div>
+
+          <div class="field">
+            <label for="description">Description</label>
+            <textarea id="description" name="description" placeholder="Water bill, rent, groceries, school costs..."></textarea>
+          </div>
+
+          <button type="submit">Add expense</button>
+        </form>
+
+        <div>
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Store</th>
+                <th>Category</th>
+                <th>Amount</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody id="expense-body">
+              <tr>
+                <td colspan="5" class="muted">Loading expenses...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('expense-form');
+      const tbody = document.getElementById('expense-body');
+      const totalSpend = document.getElementById('total-spend');
+      const expenseCount = document.getElementById('expense-count');
+      const topCategory = document.getElementById('top-category');
+
+      function formatCurrency(value) {
+        return new Intl.NumberFormat('de-DE', {
+          style: 'currency',
+          currency: 'EUR',
+        }).format(Number(value));
+      }
+
+      function renderTable(expenses) {
+        if (!expenses.length) {
+          tbody.innerHTML = '<tr><td colspan="5" class="muted">No expenses yet.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = expenses
+          .map((expense) => {
+            const categoryLabel = expense.category.charAt(0).toUpperCase() + expense.category.slice(1);
+            return `
+              <tr>
+                <td>${expense.date}</td>
+                <td>${expense.store}</td>
+                <td><span class="badge">${categoryLabel}</span></td>
+                <td>${formatCurrency(expense.amount)}</td>
+                <td>${expense.description}</td>
+              </tr>
+            `;
+          })
+          .join('');
+      }
+
+      function renderSummary(summary) {
+        totalSpend.textContent = formatCurrency(summary.total || 0);
+        expenseCount.textContent = summary.count || 0;
+
+        const categoryEntries = Object.entries(summary.by_category || {});
+        if (categoryEntries.length) {
+          const [top, amount] = categoryEntries.reduce((best, current) => {
+            return Number(current[1]) > Number(best[1]) ? current : best;
+          });
+          topCategory.textContent = `${top} (${formatCurrency(amount)})`;
+        } else {
+          topCategory.textContent = '-';
+        }
+      }
+
+      async function loadExpenses() {
+        const response = await fetch('/api/expenses');
+        const data = await response.json();
+        renderTable(data.expenses || []);
+        renderSummary(data.summary || { total: 0, count: 0, by_category: {} });
+      }
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+
+        const payload = {
+          date: formData.get('date'),
+          store: formData.get('store'),
+          category: formData.get('category'),
+          amount: Number(formData.get('amount')),
+          description: formData.get('description')
+        };
+
+        const response = await fetch('/api/expenses', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          alert(result.error || 'Unable to save expense.');
+          return;
+        }
+
+        form.reset();
+        document.getElementById('date').valueAsDate = new Date();
+        await loadExpenses();
+      });
+
+      document.getElementById('date').valueAsDate = new Date();
+      loadExpenses();
+    </script>
+  </body>
+</html>
