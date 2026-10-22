@@ -13,7 +13,8 @@ one, so the statistics and forecasts work unchanged.
 
 Polling is a request made by the server, so it is limited (SSRF): http(s)
 only, no redirects, 5 s, 64 KB, and only private, loopback or link-local
-addresses unless HAUSHALT_POLL_ALLOW_PUBLIC is set.
+addresses unless HAUSHALT_POLL_ALLOW_PUBLIC is set; http requests go to the
+checked IP itself (no DNS rebinding between check and request).
 """
 
 import asyncio
@@ -123,8 +124,9 @@ def _address_allowed(address: str) -> bool:
     return ip.is_private or ip.is_loopback or ip.is_link_local
 
 
-def check_url(url: str) -> str:
-    """Raises SourceError unless the URL may be polled; returns it stripped."""
+def resolve_checked(url: str) -> tuple[str, str]:
+    """(url, address) if the URL may be polled, else SourceError. The address
+    is the checked IP the request must go to (see fetch_value)."""
     url = url.strip()
     parts = urlsplit(url)
     if parts.scheme not in ("http", "https") or not parts.hostname:
@@ -135,17 +137,35 @@ def check_url(url: str) -> str:
         infos = socket.getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
     except socket.gaierror:
         raise SourceError(f"Host not found: {parts.hostname}")
-    addresses = {info[4][0] for info in infos}
+    addresses = sorted({info[4][0] for info in infos})
     if not addresses or not all(_address_allowed(a) for a in addresses):
         raise SourceError("Only devices in the local network can be polled")
-    return url
+    return url, addresses[0]
+
+
+def check_url(url: str) -> str:
+    """Raises SourceError unless the URL may be polled; returns it stripped."""
+    return resolve_checked(url)[0]
+
+
+def pinned(url: str, address: str) -> tuple[str, dict]:
+    """For http: the URL with the checked IP instead of the host name, plus
+    the Host header - no second DNS lookup that could be rebound to another
+    address. https keeps the name: the certificate check needs it, and a
+    rebound address would fail that check."""
+    parts = urlsplit(url)
+    if parts.scheme != "http":
+        return url, {}
+    host = f"[{address}]" if ":" in address else address
+    netloc = f"{host}:{parts.port}" if parts.port else host
+    return parts._replace(netloc=netloc).geturl(), {"host": parts.netloc}
 
 
 def fetch_value(url: str, path: str) -> float:
-    check_url(url)
+    target, host = pinned(*resolve_checked(url))
     try:
         with httpx.Client(timeout=TIMEOUT, follow_redirects=False, trust_env=False) as client:
-            with client.stream("GET", url, headers={"accept": "application/json"}) as response:
+            with client.stream("GET", target, headers={"accept": "application/json", **host}) as response:
                 if response.status_code != 200:
                     raise SourceError(f"Device answered {response.status_code}")
                 body = b""

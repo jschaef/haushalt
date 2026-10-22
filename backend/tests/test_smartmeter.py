@@ -1,8 +1,10 @@
 import json
+import socket
 import threading
 from datetime import date, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import httpx
 import pytest
 from sqlalchemy import create_engine, inspect, text
 
@@ -159,3 +161,31 @@ def test_migration_adds_meter_source_columns(tmp_path, monkeypatch):
     assert {"ingest_token_hash", "source_url", "source_path", "last_ingest_at", "last_ingest_error"} <= columns
     with engine.connect() as connection:
         assert connection.execute(text("SELECT source_url, ingest_token_hash FROM meters")).one() == ("", "")
+
+
+def test_http_requests_go_to_the_checked_address(monkeypatch):
+    """DNS rebinding: the name is resolved once; the request uses that IP."""
+    assert smartmeter.pinned("http://meter.local:8080/json?x=1", "192.168.1.20") == (
+        "http://192.168.1.20:8080/json?x=1", {"host": "meter.local:8080"})
+    assert smartmeter.pinned("http://meter.local/json", "fd00::1") == ("http://[fd00::1]/json", {"host": "meter.local"})
+    assert smartmeter.pinned("https://meter.local/json", "192.168.1.20") == ("https://meter.local/json", {})
+    calls = []
+
+    def resolve(host, port, *args):
+        calls.append(host)
+        # first answer local, every later answer public (a rebinding DNS)
+        address = "127.0.0.1" if len(calls) == 1 else "8.8.8.8"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, port))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    seen = []
+
+    class Recorder(httpx.BaseTransport):
+        def handle_request(self, request):
+            seen.append((str(request.url), request.headers["host"]))
+            return httpx.Response(200, json={"main": {"value": "5"}})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(httpx, "Client", lambda **kw: real_client(transport=Recorder(), **kw))
+    assert smartmeter.fetch_value("http://rebind.example/json", "main.value") == 5.0
+    assert seen == [("http://127.0.0.1/json", "rebind.example")] and calls == ["rebind.example"]
