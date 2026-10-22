@@ -4,3 +4,4 @@ sqlalchemy>=2.0
 python-multipart>=0.0.9
 anthropic>=2.1
 pillow>=11
+defusedxml>=0.7

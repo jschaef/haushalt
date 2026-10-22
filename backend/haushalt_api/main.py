@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import config, receipts, stats, utilities_api
+from . import banking_api, config, receipts, stats, utilities_api
 from .auth import TokenClaims, create_token, current_claims, current_user, hash_password, revoke, verify_password
-from .db import Category, Meter, Receipt, RecurringCost, Store, User, get_session, init_db
+from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
 
@@ -37,6 +37,7 @@ app = FastAPI(
     openapi_url="/api/v1/openapi.json" if _docs else None,
 )
 app.include_router(utilities_api.router)
+app.include_router(banking_api.router)
 PREFIX = "/api/v1"
 LOCALES = ("de", "en")
 
@@ -193,6 +194,13 @@ def recurring_out(cost: RecurringCost) -> RecurringOut:
         meter_id=cost.meter_id,
         daily_cents=round(stats.recurring_daily_cents(cost), 2),
     )
+
+
+def reopen_bookings(session: Session, condition) -> None:
+    """Bank bookings linked to something that is deleted go back to review,
+    otherwise they would count nowhere."""
+    for tx in session.scalars(select(BankTransaction).where(condition)):
+        tx.status, tx.receipt_id, tx.recurring_id = "review", None, None
 
 
 def check_meter(session: Session, meter_id: int | None) -> None:
@@ -441,6 +449,7 @@ def reread_receipt(receipt_id: int, _user: User = Depends(current_user), session
 def delete_receipt(receipt_id: int, _user: User = Depends(current_user), session: Session = Depends(get_session)):
     receipt = get_receipt(session, receipt_id)
     receipts.receipt_path(receipt).unlink(missing_ok=True)
+    reopen_bookings(session, BankTransaction.receipt_id == receipt.id)
     session.delete(receipt)
     session.commit()
 
@@ -483,6 +492,7 @@ def delete_recurring(cost_id: int, _user: User = Depends(current_user), session:
     cost = session.get(RecurringCost, cost_id)
     if cost is None:
         raise HTTPException(status_code=404, detail="Recurring cost not found")
+    reopen_bookings(session, BankTransaction.recurring_id == cost.id)
     session.delete(cost)
     session.commit()
 

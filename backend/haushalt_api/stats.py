@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import Category, Receipt, RecurringCost
+from .db import BankTransaction, Category, Receipt, RecurringCost
 
 DAYS_PER_MONTH = 365.25 / 12
 OTHER = "other"
@@ -94,6 +94,23 @@ def _period_totals(session: Session, period: Period, categories: dict[int, Categ
         name = receipt.store.name if receipt.store else "?"
         entry = by_store.setdefault(name, [0, 0])
         entry[0] += receipt.total_cents
+        entry[1] += 1
+    # bank bookings that count on their own (no receipt, no recurring cost)
+    bookings = session.scalars(
+        select(BankTransaction).where(
+            BankTransaction.status == "counted",
+            BankTransaction.amount_cents < 0,
+            BankTransaction.booked_on.between(period.start, period.end),
+        )
+    ).all()
+    for booking in bookings:
+        cents = -booking.amount_cents
+        category = categories.get(booking.category_id) if booking.category_id else None
+        by_category[category.key if category else OTHER] += cents
+        if category is None or category.kind == "variable":
+            daily[booking.booked_on] += cents
+        entry = by_store.setdefault(booking.counterparty or "?", [0, 0])
+        entry[0] += cents
         entry[1] += 1
     for cost in session.scalars(select(RecurringCost)):
         days = overlap_days(cost.start_on, cost.end_on, period)

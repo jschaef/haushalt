@@ -185,6 +185,33 @@ class Tariff(Base):
     base_fee_monthly_cents: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class BankTransaction(Base):
+    """One booking from a bank statement. amount_cents < 0 is money going out.
+
+    status decides whether and how it counts, so nothing is counted twice:
+    review    - not decided yet, does not count
+    receipt   - the payment of a receipt (receipt_id); the receipt counts
+    fixed     - covered by a recurring cost (recurring_id); that one counts
+    counted   - counts itself in category_id (e.g. online shopping)
+    ignored   - transfers, income, anything that is no spending
+    """
+
+    __tablename__ = "bank_transactions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booked_on: Mapped[date] = mapped_column(Date, index=True)
+    amount_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR")
+    counterparty: Mapped[str] = mapped_column(String(256), default="")
+    iban: Mapped[str] = mapped_column(String(34), default="")
+    purpose: Mapped[str] = mapped_column(String(512), default="")
+    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
+    status: Mapped[str] = mapped_column(String(16), default="review", index=True)
+    receipt_id: Mapped[int | None] = mapped_column(ForeignKey("receipts.id", ondelete="SET NULL"))
+    recurring_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_costs.id", ondelete="SET NULL"))
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class UtilityBill(Base):
     """An annual utility bill as read from its PDF or photo; amounts in cents."""
 
