@@ -84,7 +84,7 @@ export function Dashboard() {
         </BentoGrid>
       ) : (
         <BentoGrid>
-          <Tile index={0} className="col-span-2 row-span-2 justify-between bg-gradient-to-br from-primary/15 to-chart-4/10" testId="tile-daily">
+          <Tile index={0} className="col-span-2 justify-between gap-6 md:row-span-2 bg-gradient-to-br from-primary/15 to-chart-4/10" testId="tile-daily">
             <div className="text-sm font-medium text-muted-foreground">{t("dash.avgDaily")}</div>
             <div>
               <AnimatedNumber value={s.average.total.day} format={fmt} className="tabular block text-5xl font-semibold tracking-tight md:text-6xl" />
@@ -114,19 +114,7 @@ export function Dashboard() {
 
           <ReviewTile index={5} count={drafts.data?.length ?? 0} />
 
-          <Tile index={6} title={t("dash.daily")} className="col-span-2 md:col-span-4 xl:col-span-4">
-            <DailyChart summary={s} />
-          </Tile>
-
-          <Tile index={7} title={t("dash.categories")} className="col-span-2 row-span-2">
-            <CategoryBreakdown summary={s} />
-          </Tile>
-
-          <Tile index={8} title={t("dash.stores")} className="col-span-2">
-            <StoreList summary={s} fmt={fmt} />
-          </Tile>
-
-          <Tile index={9} className="col-span-2 justify-between bg-gradient-to-br from-chart-2/15 to-primary/10">
+          <Tile index={6} className="col-span-2 justify-between md:col-span-3 bg-gradient-to-br from-chart-2/15 to-primary/10">
             <div>
               <div className="text-lg font-semibold">{t("nav.scan")}</div>
               <p className="text-sm text-muted-foreground">{t("receipts.dropHint")}</p>
@@ -140,6 +128,19 @@ export function Dashboard() {
               </Button>
             </div>
           </Tile>
+
+          <Tile index={7} title={t("dash.daily")} className="col-span-2 md:col-span-4 xl:col-span-4">
+            <DailyChart summary={s} />
+          </Tile>
+
+          <Tile index={8} title={t("dash.categories")} className="col-span-2 row-span-2">
+            <CategoryBreakdown summary={s} />
+          </Tile>
+
+          <Tile index={9} title={t("dash.stores")} className="col-span-2">
+            <StoreList summary={s} fmt={fmt} />
+          </Tile>
+
 
           <Tile index={10} title={t("receipts.confirmed")} className="col-span-2" action={<MoreLink href="/receipts" />}>
             <ul className="divide-y divide-border/60 text-sm">
@@ -187,8 +188,12 @@ function SplitBar({ variable, fixed }: { variable: number; fixed: number }) {
         <div className="bg-chart-3 transition-[width] duration-700" style={{ width: `${total ? 100 - share : 0}%` }} />
       </div>
       <div className="flex justify-between text-[11px] text-muted-foreground">
-        <span>● {t("dash.variable")}</span>
-        <span>● {t("dash.fixed")}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2 rounded-full bg-primary" /> {t("dash.variable")}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2 rounded-full bg-chart-3" /> {t("dash.fixed")}
+        </span>
       </div>
     </div>
   );

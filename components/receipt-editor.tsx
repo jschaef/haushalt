@@ -22,6 +22,7 @@ type Row = { key: string; id: number | null; name: string; quantity: string; amo
 type Draft = { store_name: string; purchased_on: string; total: string; rows: Row[] };
 
 let nextKey = 0;
+const MAX_DUPLICATE_LINKS = 5;
 
 function toDraft(receipt: Receipt, locale: Locale): Draft {
   return {
@@ -159,12 +160,15 @@ export function ReceiptEditor({ id }: { id: number }) {
       {r.duplicates.length > 0 && (
         <div role="status" className="glass flex items-center gap-2 rounded-2xl p-3 text-sm text-chart-3">
           <AlertTriangle className="size-4 shrink-0" />
-          {t("receipt.duplicate", { ids: r.duplicates.join(", #") })}
-          {r.duplicates.map((dup) => (
-            <Link key={dup} href={`/receipts/${dup}`} className="underline">
-              #{dup}
-            </Link>
-          ))}
+          <span className="flex-1">{t("receipt.duplicate", { count: r.duplicates.length })}</span>
+          <span className="flex flex-wrap gap-2">
+            {r.duplicates.slice(0, MAX_DUPLICATE_LINKS).map((dup) => (
+              <Link key={dup} href={`/receipts/${dup}`} className="underline">
+                #{dup}
+              </Link>
+            ))}
+            {r.duplicates.length > MAX_DUPLICATE_LINKS && <span>…</span>}
+          </span>
         </div>
       )}
 
@@ -261,7 +265,7 @@ export function ReceiptEditor({ id }: { id: number }) {
             )}
           </Tile>
 
-          <div className="glass sticky bottom-24 z-10 flex flex-wrap gap-2 rounded-2xl p-3 md:bottom-4">
+          <div className="glass sticky bottom-24 z-10 flex bg-background/80 flex-wrap gap-2 rounded-2xl p-3 md:bottom-4">
             <Button onClick={() => save(true)} disabled={busy || !patch || !draft.purchased_on} className="bg-gradient-to-r from-primary to-chart-4">
               <Check /> {t("receipt.confirm")}
             </Button>
