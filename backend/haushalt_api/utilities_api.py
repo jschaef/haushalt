@@ -1,7 +1,7 @@
 """HTTP API for utility meters, readings, tariffs and annual bills."""
 
 import hashlib
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -32,12 +32,17 @@ class MeterIn(BaseModel):
 class MeterOut(MeterIn):
     id: int
     last_reading: dict | None
+    has_device_token: bool = False
+    source_url: str = ""
+    source_path: str = ""
+    last_ingest_at: datetime | None = None
+    last_ingest_error: str = ""
 
 
 class ReadingIn(BaseModel):
     read_on: date
     value: float = Field(ge=0)
-    source: str = Field(default="manual", pattern="^(manual|photo|bill)$")
+    source: str = Field(default="manual", pattern="^(manual|photo|bill|device)$")
 
 
 class ReadingOut(ReadingIn):
@@ -75,6 +80,11 @@ def _meter_out(meter: Meter) -> MeterOut:
         meter_number=meter.meter_number,
         category_id=meter.category_id,
         last_reading={"read_on": last.read_on.isoformat(), "value": last.value} if last else None,
+        has_device_token=bool(meter.ingest_token_hash),
+        source_url=meter.source_url,
+        source_path=meter.source_path,
+        last_ingest_at=meter.last_ingest_at,
+        last_ingest_error=meter.last_ingest_error,
     )
 
 

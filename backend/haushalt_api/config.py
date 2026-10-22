@@ -29,3 +29,8 @@ API_DOCS = os.getenv("HAUSHALT_API_DOCS", "false").lower() in ("1", "true", "yes
 # failed logins per username and client address before a pause
 LOGIN_MAX_FAILURES = int(os.getenv("HAUSHALT_LOGIN_MAX_FAILURES", 5))
 LOGIN_BLOCK_SECONDS = int(os.getenv("HAUSHALT_LOGIN_BLOCK_SECONDS", 300))
+
+# smart meter polling (smartmeter.py): minutes between polls, 0 = off.
+# Polled addresses must be private/local unless HAUSHALT_POLL_ALLOW_PUBLIC.
+POLL_MINUTES = int(os.getenv("HAUSHALT_POLL_MINUTES", 15))
+POLL_ALLOW_PUBLIC = os.getenv("HAUSHALT_POLL_ALLOW_PUBLIC", "false").lower() in ("1", "true", "yes")

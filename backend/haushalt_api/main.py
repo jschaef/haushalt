@@ -1,6 +1,7 @@
 """HTTP API, prefix /api/v1. The Next.js frontend proxies /api/v1/* here and
 adds the bearer token from its httpOnly session cookie."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import date
@@ -11,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking_api, config, receipts, stats, utilities_api
+from . import banking_api, config, receipts, smartmeter, smartmeter_api, stats, utilities_api
 from .auth import TokenClaims, create_token, current_claims, current_user, hash_password, revoke, verify_password
 from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
@@ -23,7 +24,10 @@ logger = logging.getLogger("haushalt_api")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    poller = asyncio.create_task(smartmeter.poll_forever()) if config.POLL_MINUTES > 0 else None
     yield
+    if poller:
+        poller.cancel()
 
 
 # The OpenAPI pages are off unless asked for: they list every endpoint.
@@ -36,6 +40,8 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/v1/openapi.json" if _docs else None,
 )
+app.include_router(smartmeter_api.router)
+app.include_router(smartmeter_api.ingest_router)
 app.include_router(utilities_api.router)
 app.include_router(banking_api.router)
 PREFIX = "/api/v1"

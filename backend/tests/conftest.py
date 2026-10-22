@@ -9,6 +9,7 @@ _DATA = Path(tempfile.mkdtemp(prefix="haushalt-test-"))
 os.environ["HAUSHALT_DATA_DIR"] = str(_DATA)
 os.environ["HAUSHALT_EXTRACTOR"] = "fake"
 os.environ["HAUSHALT_SECRET"] = "test-secret"
+os.environ["HAUSHALT_POLL_MINUTES"] = "0"
 os.environ.pop("HAUSHALT_DATABASE_URL", None)
 
 import pytest  # noqa: E402

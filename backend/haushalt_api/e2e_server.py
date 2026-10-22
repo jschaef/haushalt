@@ -14,6 +14,7 @@ args = parser.parse_args()
 os.environ["HAUSHALT_DATA_DIR"] = tempfile.mkdtemp(prefix="haushalt-e2e-")
 os.environ["HAUSHALT_EXTRACTOR"] = "fake"
 os.environ.setdefault("HAUSHALT_SECRET", "e2e-secret")
+os.environ["HAUSHALT_POLL_MINUTES"] = "0"
 os.environ.pop("HAUSHALT_DATABASE_URL", None)
 
 import uvicorn  # noqa: E402

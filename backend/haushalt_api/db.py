@@ -155,6 +155,13 @@ class Meter(Base):
     unit: Mapped[str] = mapped_column(String(16), default="kWh")
     meter_number: Mapped[str] = mapped_column(String(64), default="")
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    # automatic reading (smartmeter.py): a device pushes with its token, or
+    # the API polls source_url and reads the number at source_path
+    ingest_token_hash: Mapped[str] = mapped_column(String(64), default="", index=True)
+    source_url: Mapped[str] = mapped_column(String(512), default="")
+    source_path: Mapped[str] = mapped_column(String(128), default="")
+    last_ingest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_ingest_error: Mapped[str] = mapped_column(String(256), default="")
 
     readings: Mapped[list["MeterReading"]] = relationship(
         back_populates="meter", cascade="all, delete-orphan", order_by="MeterReading.read_on"
@@ -287,7 +294,16 @@ def init_db() -> None:
 
 # Columns added after the first release. create_all() creates new tables but
 # never alters existing ones, so older databases get them here.
-_LATER_COLUMNS = {"recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"}}
+_LATER_COLUMNS = {
+    "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
+    "meters": {
+        "ingest_token_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
+        "source_url": "VARCHAR(512) NOT NULL DEFAULT ''",
+        "source_path": "VARCHAR(128) NOT NULL DEFAULT ''",
+        "last_ingest_at": "DATETIME",
+        "last_ingest_error": "VARCHAR(256) NOT NULL DEFAULT ''",
+    },
+}
 
 
 def _add_missing_columns() -> None:
