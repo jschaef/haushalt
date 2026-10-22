@@ -143,7 +143,7 @@ function Shell({ children }: { children: ReactNode }) {
 
       {/* phone: bottom tab bar with the camera in the middle */}
       <nav className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 md:hidden" aria-label="Main">
-        <div className="glass grid h-16 grid-cols-5 items-center rounded-2xl bg-background/80 px-1">
+        <div className="glass grid h-16 grid-cols-5 items-center rounded-2xl bg-background/90 px-1">
           {TABS.slice(0, 2).map((item) => (
             <TabLink key={item.href} href={item.href} label={t(item.label)} icon={item.icon} active={isActive(item.href)} />
           ))}

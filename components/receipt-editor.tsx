@@ -265,7 +265,7 @@ export function ReceiptEditor({ id }: { id: number }) {
             )}
           </Tile>
 
-          <div className="glass sticky bottom-24 z-10 flex bg-background/80 flex-wrap gap-2 rounded-2xl p-3 md:bottom-4">
+          <div className="glass sticky bottom-24 z-10 flex bg-background/90 flex-wrap gap-2 rounded-2xl p-3 md:bottom-4">
             <Button onClick={() => save(true)} disabled={busy || !patch || !draft.purchased_on} className="bg-gradient-to-r from-primary to-chart-4">
               <Check /> {t("receipt.confirm")}
             </Button>
