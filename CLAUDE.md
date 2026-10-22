@@ -58,6 +58,10 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   costs and the settlement forecast live on the utilities page (no double
   counting). New columns on existing tables need an entry in
   `db._LATER_COLUMNS` (create_all never alters tables).
+- Bank (`banking.py`, `banking_api.py`): CAMT via defusedxml, CSV header
+  detection by whole words. Booking status decides counting: only `counted`
+  enters the statistics (`receipt`/`fixed` are counted through the receipt or
+  recurring cost). Deleting those reopens linked bookings.
 - i18n: `lib/i18n/messages.ts` (de reference, en typed against it), cookie `haushalt_locale`.
 
 ## Security

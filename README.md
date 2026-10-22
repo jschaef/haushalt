@@ -16,6 +16,9 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
   Claude reads the value. With the tariff the app forecasts the annual
   settlement (credit or additional payment) and suggests an instalment. Annual
   bills (PDF) are read and their prices and new instalment can be taken over.
+- **Bank statements:** import CAMT (XML) or CSV exports; bookings are matched
+  with receipts and fixed costs automatically, the rest waits for a decision,
+  so nothing is counted twice.
 - **Household:** several members, shared data, German and English UI.
 - **Modern UI:** bento dashboard, glass design, dark mode, animations, view
   transitions, command palette (Ctrl/⌘ K), swipe gestures on the phone.
@@ -67,5 +70,5 @@ Frontend: `HAUSHALT_API_URL` (default `http://127.0.0.1:8300`),
 
 1. ✅ Receipts → review → dashboard, fixed costs, household, DE/EN
 2. ✅ Utilities in depth: meter readings by photo, tariffs, settlement forecast, annual bills
-3. Bank statement import (CSV/CAMT) and automatic matching with receipts
+3. ✅ Bank statement import (CSV/CAMT) and automatic matching with receipts
 4. Smart meter import
