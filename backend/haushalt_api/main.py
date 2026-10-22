@@ -11,9 +11,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import config, receipts, stats
+from . import config, receipts, stats, utilities_api
 from .auth import TokenClaims, create_token, current_claims, current_user, hash_password, revoke, verify_password
-from .db import Category, Receipt, RecurringCost, Store, User, get_session, init_db
+from .db import Category, Meter, Receipt, RecurringCost, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
 
@@ -36,6 +36,7 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/api/v1/openapi.json" if _docs else None,
 )
+app.include_router(utilities_api.router)
 PREFIX = "/api/v1"
 LOCALES = ("de", "en")
 
@@ -127,6 +128,7 @@ class RecurringIn(BaseModel):
     interval_months: int = Field(default=1, ge=1, le=120)
     start_on: date
     end_on: date | None = None
+    meter_id: int | None = None
 
 
 class RecurringOut(RecurringIn):
@@ -188,8 +190,14 @@ def recurring_out(cost: RecurringCost) -> RecurringOut:
         interval_months=cost.interval_months,
         start_on=cost.start_on,
         end_on=cost.end_on,
+        meter_id=cost.meter_id,
         daily_cents=round(stats.recurring_daily_cents(cost), 2),
     )
+
+
+def check_meter(session: Session, meter_id: int | None) -> None:
+    if meter_id is not None and session.get(Meter, meter_id) is None:
+        raise HTTPException(status_code=422, detail=f"Unknown meter {meter_id}")
 
 
 def check_category(session: Session, category_id: int | None) -> None:
@@ -448,6 +456,7 @@ def list_recurring(_user: User = Depends(current_user), session: Session = Depen
 @app.post(f"{PREFIX}/recurring", response_model=RecurringOut, status_code=201)
 def create_recurring(body: RecurringIn, _user: User = Depends(current_user), session: Session = Depends(get_session)):
     check_category(session, body.category_id)
+    check_meter(session, body.meter_id)
     cost = RecurringCost(**body.model_dump())
     session.add(cost)
     session.commit()
@@ -462,6 +471,7 @@ def update_recurring(
     if cost is None:
         raise HTTPException(status_code=404, detail="Recurring cost not found")
     check_category(session, body.category_id)
+    check_meter(session, body.meter_id)
     for field, value in body.model_dump().items():
         setattr(cost, field, value)
     session.commit()

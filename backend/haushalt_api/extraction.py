@@ -80,6 +80,10 @@ class ExtractedReceipt:
 class Extractor(Protocol):
     def extract(self, data: bytes, media_type: str, category_keys: list[str]) -> ExtractedReceipt: ...
 
+    def read_meter(self, data: bytes, media_type: str) -> dict: ...
+
+    def read_bill(self, data: bytes, media_type: str) -> dict: ...
+
 
 def _cents(value) -> int | None:
     if value is None:
@@ -208,7 +212,7 @@ def content_blocks(data: bytes, media_type: str) -> list[dict]:
         tiles = image_tiles(data)
         blocks: list[dict] = []
         if len(tiles) > 1:
-            blocks.append({"type": "text", "text": f"The receipt is split into {len(tiles)} overlapping parts, top to bottom."})
+            blocks.append({"type": "text", "text": f"The image is split into {len(tiles)} overlapping parts, top to bottom."})
         for tile in tiles:
             blocks.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": tile}})
         return blocks
@@ -225,10 +229,11 @@ class ClaudeExtractor:
         self.model = model or config.RECEIPT_MODEL
         self.effort = effort or config.RECEIPT_EFFORT
 
-    def extract(self, data: bytes, media_type: str, category_keys: list[str]) -> ExtractedReceipt:
+    def _ask(self, data: bytes, media_type: str, prompt: str, schema: dict, what: str) -> dict:
+        """One structured-output request about one file; the parsed JSON answer."""
         import anthropic
 
-        content = content_blocks(data, media_type) + [{"type": "text", "text": PROMPT}]
+        content = content_blocks(data, media_type) + [{"type": "text", "text": prompt}]
         try:
             # fallbacks="default": if a safety classifier declines, the API
             # retries on a fallback model inside the same call.
@@ -237,10 +242,7 @@ class ClaudeExtractor:
                 max_tokens=16000,
                 betas=["server-side-fallback-2026-07-01"],
                 fallbacks="default",
-                output_config={
-                    "effort": self.effort,
-                    "format": {"type": "json_schema", "schema": receipt_schema(category_keys)},
-                },
+                output_config={"effort": self.effort, "format": {"type": "json_schema", "schema": schema}},
                 messages=[{"role": "user", "content": content}],
             )
         except anthropic.RateLimitError as exc:
@@ -252,7 +254,7 @@ class ClaudeExtractor:
         if response.stop_reason == "refusal":
             raise ExtractionError("The model declined to read this file")
         if response.stop_reason == "max_tokens":
-            raise ExtractionError("Receipt too long for one answer")
+            raise ExtractionError("File too long for one answer")
         text = next((block.text for block in response.content if block.type == "text"), None)
         if text is None:
             raise ExtractionError("Empty answer from the model")
@@ -262,8 +264,17 @@ class ClaudeExtractor:
             raise ExtractionError("Answer was not valid JSON") from exc
         usage = getattr(response, "usage", None)
         if usage is not None:
-            logger.info("receipt read: %s input / %s output tokens", usage.input_tokens, usage.output_tokens)
-        return parse_result(raw)
+            logger.info("%s read: %s input / %s output tokens", what, usage.input_tokens, usage.output_tokens)
+        return raw
+
+    def extract(self, data: bytes, media_type: str, category_keys: list[str]) -> ExtractedReceipt:
+        return parse_result(self._ask(data, media_type, PROMPT, receipt_schema(category_keys), "receipt"))
+
+    def read_meter(self, data: bytes, media_type: str) -> dict:
+        return parse_meter(self._ask(data, media_type, METER_PROMPT, METER_SCHEMA, "meter"))
+
+    def read_bill(self, data: bytes, media_type: str) -> dict:
+        return parse_bill(self._ask(data, media_type, BILL_PROMPT, BILL_SCHEMA, "bill"))
 
 
 FAKE_RECEIPT = {
@@ -284,12 +295,152 @@ FAKE_RECEIPT = {
 
 
 class FakeExtractor:
+    @staticmethod
+    def _check(media_type: str) -> None:
+        if media_type not in IMAGE_TYPES | {PDF_TYPE}:
+            raise ExtractionError(f"Unsupported file type {media_type}")
+
+    def read_meter(self, data: bytes, media_type: str) -> dict:
+        self._check(media_type)
+        return parse_meter(FAKE_METER)
+
+    def read_bill(self, data: bytes, media_type: str) -> dict:
+        self._check(media_type)
+        return parse_bill(FAKE_BILL)
+
     def extract(self, data: bytes, media_type: str, category_keys: list[str]) -> ExtractedReceipt:
         if media_type not in IMAGE_TYPES | {PDF_TYPE}:
             raise ExtractionError(f"Unsupported file type {media_type}")
         raw = json.loads(json.dumps(FAKE_RECEIPT))
         raw["purchased_on"] = date.today().isoformat()
         return parse_result(raw)
+
+
+# --- utility meters and bills ---------------------------------------------
+
+UTILITY_KINDS = ["electricity", "gas", "water", "heat", "other"]
+
+METER_PROMPT = """This photo shows a utility meter (electricity, gas, water or heat), usually German.
+Return the reading as JSON.
+- value: the number on the main register as a decimal number. Digits after the decimal
+  separator are often red or in a red frame; include them as decimals. Ignore other
+  numbers (meter number, year of calibration, constants like "imp/kWh").
+- unit: the unit printed next to the register (kWh, m3, MWh, ...).
+- meter_number: the serial number printed on the meter (often "Nr." or a barcode
+  number), empty string if not readable.
+- kind: electricity for kWh meters, gas for gas meters (m3, often "Gas" or "G4"), water
+  for water meters (m3), heat for heat meters.
+- If the photo is not a meter or the register is not readable, set is_meter to false."""
+
+METER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "is_meter": {"type": "boolean"},
+        "kind": {"type": "string", "enum": UTILITY_KINDS},
+        "value": {"type": ["number", "null"]},
+        "unit": {"type": "string"},
+        "meter_number": {"type": "string"},
+    },
+    "required": ["is_meter", "kind", "value", "unit", "meter_number"],
+    "additionalProperties": False,
+}
+
+BILL_PROMPT = """This is an annual utility bill (Jahresabrechnung) for electricity, gas, water
+or heat, usually German. Return its key figures as JSON. Amounts are gross (incl. VAT),
+plain numbers in EUR.
+- period_start, period_end: billing period as YYYY-MM-DD.
+- consumption and unit: total consumption in the period (kWh or m3).
+- total_cost: gross total for the period.
+- paid: sum of instalments (Abschlaege) paid in the period.
+- balance: paid minus total_cost (positive = credit/Guthaben, negative = Nachzahlung).
+- unit_price_ct: gross energy/working price in cent per unit (Arbeitspreis), null if not stated.
+- base_fee_monthly: gross base fee per month (Grundpreis), null if not stated.
+- new_instalment: the new monthly instalment from now on, null if not stated.
+- meter_number: the meter number on the bill, empty string if none.
+- provider: the supplier's name.
+If the document is not a utility bill, set is_bill to false."""
+
+BILL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "is_bill": {"type": "boolean"},
+        "kind": {"type": "string", "enum": UTILITY_KINDS},
+        "provider": {"type": "string"},
+        "meter_number": {"type": "string"},
+        "period_start": {"type": ["string", "null"]},
+        "period_end": {"type": ["string", "null"]},
+        "consumption": {"type": ["number", "null"]},
+        "unit": {"type": "string"},
+        "total_cost": {"type": ["number", "null"]},
+        "paid": {"type": ["number", "null"]},
+        "balance": {"type": ["number", "null"]},
+        "unit_price_ct": {"type": ["number", "null"]},
+        "base_fee_monthly": {"type": ["number", "null"]},
+        "new_instalment": {"type": ["number", "null"]},
+    },
+    "required": [
+        "is_bill", "kind", "provider", "meter_number", "period_start", "period_end", "consumption", "unit",
+        "total_cost", "paid", "balance", "unit_price_ct", "base_fee_monthly", "new_instalment",
+    ],
+    "additionalProperties": False,
+}
+
+
+def _iso(value) -> date | None:
+    try:
+        return date.fromisoformat(value) if value else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _unit(text: str) -> str:
+    value = (text or "").strip().replace("³", "3").replace(" ", "")
+    return {"m3": "m³", "kwh": "kWh", "mwh": "MWh"}.get(value.lower(), value[:16])
+
+
+def parse_meter(raw: dict) -> dict:
+    value = raw.get("value")
+    return {
+        "is_meter": bool(raw.get("is_meter")) and value is not None,
+        "kind": raw.get("kind") if raw.get("kind") in UTILITY_KINDS else "other",
+        "value": float(value) if value is not None else None,
+        "unit": _unit(raw.get("unit", "")),
+        "meter_number": str(raw.get("meter_number") or "").strip()[:64],
+    }
+
+
+def parse_bill(raw: dict) -> dict:
+    total = _cents(raw.get("total_cost"))
+    paid = _cents(raw.get("paid"))
+    balance = _cents(raw.get("balance"))
+    if balance is None and total is not None and paid is not None:
+        balance = paid - total
+    return {
+        "is_bill": bool(raw.get("is_bill")),
+        "kind": raw.get("kind") if raw.get("kind") in UTILITY_KINDS else "other",
+        "provider": str(raw.get("provider") or "").strip()[:128],
+        "meter_number": str(raw.get("meter_number") or "").strip()[:64],
+        "period_start": _iso(raw.get("period_start")),
+        "period_end": _iso(raw.get("period_end")),
+        "consumption": float(raw["consumption"]) if raw.get("consumption") is not None else None,
+        "unit": _unit(raw.get("unit", "")),
+        "total_cents": total,
+        "paid_cents": paid,
+        "balance_cents": balance,
+        "unit_price_ct": float(raw["unit_price_ct"]) if raw.get("unit_price_ct") is not None else None,
+        "base_fee_monthly_cents": _cents(raw.get("base_fee_monthly")),
+        "new_instalment_cents": _cents(raw.get("new_instalment")),
+    }
+
+
+FAKE_METER = {"is_meter": True, "kind": "electricity", "value": 12345.6, "unit": "kWh", "meter_number": "1ESY1160123456"}
+
+FAKE_BILL = {
+    "is_bill": True, "kind": "electricity", "provider": "Stadtwerke Beispiel", "meter_number": "1ESY1160123456",
+    "period_start": "2025-01-01", "period_end": "2025-12-31", "consumption": 2400, "unit": "kWh",
+    "total_cost": 960.0, "paid": 900.0, "balance": -60.0, "unit_price_ct": 32.5, "base_fee_monthly": 15.0,
+    "new_instalment": 85.0,
+}
 
 
 _extractor: Extractor | None = None

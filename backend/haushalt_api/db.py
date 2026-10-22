@@ -14,7 +14,10 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     create_engine,
+    inspect,
+    text,
     event,
     select,
 )
@@ -138,6 +141,73 @@ class RecurringCost(Base):
     interval_months: Mapped[int] = mapped_column(Integer, default=1)
     start_on: Mapped[date] = mapped_column(Date)
     end_on: Mapped[date | None] = mapped_column(Date)
+    # instalment for a utility meter: counts as "paid" in its settlement forecast
+    meter_id: Mapped[int | None] = mapped_column(ForeignKey("meters.id", ondelete="SET NULL"))
+
+
+class Meter(Base):
+    """A utility meter. kind: electricity, gas, water, heat or other."""
+
+    __tablename__ = "meters"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    kind: Mapped[str] = mapped_column(String(16), default="electricity")
+    unit: Mapped[str] = mapped_column(String(16), default="kWh")
+    meter_number: Mapped[str] = mapped_column(String(64), default="")
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+
+    readings: Mapped[list["MeterReading"]] = relationship(
+        back_populates="meter", cascade="all, delete-orphan", order_by="MeterReading.read_on"
+    )
+    tariffs: Mapped[list["Tariff"]] = relationship(cascade="all, delete-orphan", order_by="Tariff.valid_from")
+
+
+class MeterReading(Base):
+    __tablename__ = "meter_readings"
+    __table_args__ = (UniqueConstraint("meter_id", "read_on"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meter_id: Mapped[int] = mapped_column(ForeignKey("meters.id", ondelete="CASCADE"))
+    read_on: Mapped[date] = mapped_column(Date)
+    value: Mapped[float] = mapped_column()
+    source: Mapped[str] = mapped_column(String(16), default="manual")
+
+    meter: Mapped[Meter] = relationship(back_populates="readings")
+
+
+class Tariff(Base):
+    """Prices valid from a date on: gross cent per unit and gross base fee per month."""
+
+    __tablename__ = "tariffs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meter_id: Mapped[int] = mapped_column(ForeignKey("meters.id", ondelete="CASCADE"))
+    valid_from: Mapped[date] = mapped_column(Date)
+    unit_price_ct: Mapped[float] = mapped_column()
+    base_fee_monthly_cents: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UtilityBill(Base):
+    """An annual utility bill as read from its PDF or photo; amounts in cents."""
+
+    __tablename__ = "utility_bills"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    meter_id: Mapped[int | None] = mapped_column(ForeignKey("meters.id", ondelete="SET NULL"))
+    kind: Mapped[str] = mapped_column(String(16), default="other")
+    provider: Mapped[str] = mapped_column(String(128), default="")
+    meter_number: Mapped[str] = mapped_column(String(64), default="")
+    period_start: Mapped[date | None] = mapped_column(Date)
+    period_end: Mapped[date | None] = mapped_column(Date)
+    consumption: Mapped[float | None] = mapped_column()
+    unit: Mapped[str] = mapped_column(String(16), default="")
+    total_cents: Mapped[int | None] = mapped_column(Integer)
+    paid_cents: Mapped[int | None] = mapped_column(Integer)
+    balance_cents: Mapped[int | None] = mapped_column(Integer)
+    unit_price_ct: Mapped[float | None] = mapped_column()
+    base_fee_monthly_cents: Mapped[int | None] = mapped_column(Integer)
+    new_instalment_cents: Mapped[int | None] = mapped_column(Integer)
+    file_name: Mapped[str] = mapped_column(String(256), default="")
+    media_type: Mapped[str] = mapped_column(String(64), default="")
+    error: Mapped[str] = mapped_column(String(512), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 DEFAULT_CATEGORIES = [
@@ -179,12 +249,28 @@ def init_db() -> None:
     if config.DATABASE_URL.startswith("sqlite:///"):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(engine)
+    _add_missing_columns()
     with SessionLocal() as session:
         existing = set(session.scalars(select(Category.key)))
         for key, de, en, kind, color, icon in DEFAULT_CATEGORIES:
             if key not in existing:
                 session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
         session.commit()
+
+
+# Columns added after the first release. create_all() creates new tables but
+# never alters existing ones, so older databases get them here.
+_LATER_COLUMNS = {"recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"}}
+
+
+def _add_missing_columns() -> None:
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        for table, columns in _LATER_COLUMNS.items():
+            existing = {c["name"] for c in inspector.get_columns(table)}
+            for name, ddl in columns.items():
+                if name not in existing:
+                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def get_session() -> Iterator[Session]:
