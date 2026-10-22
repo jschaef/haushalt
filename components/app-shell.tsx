@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Camera, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
+import { Camera, Gauge, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { ScanProvider, useScan } from "@/components/scan";
@@ -18,8 +18,13 @@ const NAV: { href: string; label: MessageKey; icon: typeof LayoutGrid }[] = [
   { href: "/dashboard", label: "nav.dashboard", icon: LayoutGrid },
   { href: "/receipts", label: "nav.receipts", icon: Receipt },
   { href: "/fixed", label: "nav.fixed", icon: Repeat },
+  { href: "/utilities", label: "nav.utilities", icon: Gauge },
   { href: "/settings", label: "nav.settings", icon: Settings },
 ];
+
+// phone tab bar: two links, the camera, two links; fixed costs are reached
+// from the utilities page and the command palette
+const TABS = NAV.filter((item) => item.href !== "/fixed");
 
 async function logout() {
   await fetch("/api/auth/logout", { method: "POST" });
@@ -139,13 +144,13 @@ function Shell({ children }: { children: ReactNode }) {
       {/* phone: bottom tab bar with the camera in the middle */}
       <nav className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 md:hidden" aria-label="Main">
         <div className="glass grid h-16 grid-cols-5 items-center rounded-2xl bg-background/80 px-1">
-          {NAV.slice(0, 2).map((item) => (
+          {TABS.slice(0, 2).map((item) => (
             <TabLink key={item.href} href={item.href} label={t(item.label)} icon={item.icon} active={isActive(item.href)} />
           ))}
           <div className="flex justify-center">
             <ScanFab />
           </div>
-          {NAV.slice(2).map((item) => (
+          {TABS.slice(2).map((item) => (
             <TabLink key={item.href} href={item.href} label={t(item.label)} icon={item.icon} active={isActive(item.href)} />
           ))}
         </div>
@@ -158,9 +163,9 @@ function Shell({ children }: { children: ReactNode }) {
 
 function TabLink({ href, label, icon: Icon, active }: { href: string; label: string; icon: typeof LayoutGrid; active: boolean }) {
   return (
-    <Link href={href} className={cn("flex flex-col items-center gap-0.5 text-[10px] text-muted-foreground", active && "text-primary")}>
+    <Link href={href} className={cn("flex min-w-0 flex-col items-center gap-0.5 text-[10px] text-muted-foreground", active && "text-primary")}>
       <Icon className="size-5" />
-      {label}
+      <span className="max-w-full truncate">{label}</span>
     </Link>
   );
 }

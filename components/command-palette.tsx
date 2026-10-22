@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Camera, LayoutGrid, Languages, Receipt, Repeat, Search, Settings, SunMoon, Store as StoreIcon } from "lucide-react";
+import { Camera, Gauge, LayoutGrid, Languages, Receipt, Repeat, Search, Settings, SunMoon, Store as StoreIcon } from "lucide-react";
 import { api, type Store } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/provider";
 import { useScan } from "@/components/scan";
@@ -50,6 +50,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       { id: "receipts", group: nav, label: t("nav.receipts"), icon: <Receipt />, run: go("/receipts") },
       { id: "drafts", group: nav, label: t("receipts.drafts"), icon: <Receipt />, run: go("/receipts?status=draft") },
       { id: "fixed", group: nav, label: t("nav.fixed"), icon: <Repeat />, run: go("/fixed") },
+      { id: "utilities", group: nav, label: t("nav.utilities"), icon: <Gauge />, run: go("/utilities") },
       { id: "settings", group: nav, label: t("nav.settings"), icon: <Settings />, run: go("/settings") },
       { id: "scan", group: actions, label: t("nav.scan"), icon: <Camera />, run: scan.openCamera },
       { id: "theme", group: actions, label: t("palette.toggleTheme"), icon: <SunMoon />, run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark") },

@@ -85,6 +85,8 @@ function CostForm({
         interval_months: months,
         start_on: start,
         end_on: end || null,
+        // keep the link of a utility instalment to its meter
+        meter_id: initial?.meter_id ?? null,
       });
       if (ok && !initial) {
         setName("");

@@ -63,8 +63,76 @@ export type Recurring = {
   interval_months: number;
   start_on: string;
   end_on: string | null;
+  meter_id: number | null;
   daily_cents: number;
 };
+
+export type UtilityKind = "electricity" | "gas" | "water" | "heat" | "other";
+
+export type Meter = {
+  id: number;
+  name: string;
+  kind: UtilityKind;
+  unit: string;
+  meter_number: string;
+  category_id: number | null;
+  last_reading: { read_on: string; value: number } | null;
+};
+
+export type MeterReading = { id: number; read_on: string; value: number; source: "manual" | "photo" | "bill" };
+
+export type Tariff = { id: number; valid_from: string; unit_price_ct: number; base_fee_monthly_cents: number };
+
+export type MeterSummary = {
+  meter_id: number;
+  period_start: string;
+  period_end: string;
+  covered_start: string | null;
+  covered_end: string | null;
+  consumption: number;
+  per_day: number | null;
+  projected_consumption: number | null;
+  projected_cost_cents: number | null;
+  paid_cents: number;
+  // positive: credit expected, negative: additional payment
+  projected_balance_cents: number | null;
+  suggested_instalment_cents: number | null;
+  intervals: { start: string; end: string; per_day: number }[];
+  elapsed_days: number;
+};
+
+export type MeterPhotoResult = {
+  is_meter: boolean;
+  kind: UtilityKind;
+  value: number;
+  unit: string;
+  meter_number: string;
+  meter_id: number | null;
+  read_on: string;
+};
+
+export type UtilityBill = {
+  id: number;
+  meter_id: number | null;
+  kind: UtilityKind;
+  provider: string;
+  meter_number: string;
+  period_start: string | null;
+  period_end: string | null;
+  consumption: number | null;
+  unit: string;
+  total_cents: number | null;
+  paid_cents: number | null;
+  balance_cents: number | null;
+  unit_price_ct: number | null;
+  base_fee_monthly_cents: number | null;
+  new_instalment_cents: number | null;
+  file_name: string;
+  media_type: string;
+  error: string;
+};
+
+type MeterInput = Omit<Meter, "id" | "last_reading">;
 
 export type User = { id: number; username: string; display_name: string; locale: "de" | "en" };
 
@@ -127,9 +195,36 @@ export const api = {
   deleteReceipt: (id: number) => request<void>(`receipts/${id}`, { method: "DELETE" }),
   fileUrl: (id: number) => `/api/v1/receipts/${id}/file`,
   recurring: () => request<Recurring[]>("recurring"),
-  createRecurring: (body: Omit<Recurring, "id" | "daily_cents">) => request<Recurring>("recurring", json("POST", body)),
-  updateRecurring: (id: number, body: Omit<Recurring, "id" | "daily_cents">) =>
+  createRecurring: (body: Omit<Recurring, "id" | "daily_cents" | "meter_id"> & { meter_id?: number | null }) => request<Recurring>("recurring", json("POST", body)),
+  updateRecurring: (id: number, body: Omit<Recurring, "id" | "daily_cents" | "meter_id"> & { meter_id?: number | null }) =>
     request<Recurring>(`recurring/${id}`, json("PUT", body)),
   deleteRecurring: (id: number) => request<void>(`recurring/${id}`, { method: "DELETE" }),
   summary: (range: Range) => request<Summary>(`stats/summary?range=${range}`),
+  meters: () => request<Meter[]>("meters"),
+  createMeter: (body: MeterInput) => request<Meter>("meters", json("POST", body)),
+  updateMeter: (id: number, body: MeterInput) => request<Meter>(`meters/${id}`, json("PUT", body)),
+  deleteMeter: (id: number) => request<void>(`meters/${id}`, { method: "DELETE" }),
+  meterSummary: (id: number) => request<MeterSummary>(`meters/${id}/summary`),
+  readings: (meterId: number) => request<MeterReading[]>(`meters/${meterId}/readings`),
+  addReading: (meterId: number, body: Omit<MeterReading, "id">) =>
+    request<MeterReading>(`meters/${meterId}/readings`, json("POST", body)),
+  deleteReading: (id: number) => request<void>(`readings/${id}`, { method: "DELETE" }),
+  readMeterPhoto: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<MeterPhotoResult>("meters/read-photo", { method: "POST", body: form });
+  },
+  tariffs: (meterId: number) => request<Tariff[]>(`meters/${meterId}/tariffs`),
+  addTariff: (meterId: number, body: Omit<Tariff, "id">) => request<Tariff>(`meters/${meterId}/tariffs`, json("POST", body)),
+  deleteTariff: (id: number) => request<void>(`tariffs/${id}`, { method: "DELETE" }),
+  bills: () => request<UtilityBill[]>("bills"),
+  uploadBill: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<UtilityBill>("bills", { method: "POST", body: form });
+  },
+  assignBill: (id: number, meterId: number | null) => request<UtilityBill>(`bills/${id}`, json("PATCH", { meter_id: meterId })),
+  applyBill: (id: number) => request<{ tariff: boolean; instalment: boolean }>(`bills/${id}/apply`, { method: "POST" }),
+  deleteBill: (id: number) => request<void>(`bills/${id}`, { method: "DELETE" }),
+  billFileUrl: (id: number) => `/api/v1/bills/${id}/file`,
 };

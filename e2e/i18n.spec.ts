@@ -7,13 +7,13 @@ test("language toggle switches DE/EN and persists after reload", async ({ page, 
   await login(page);
   // the visible nav link (header on desktop, tab bar on phones)
   const receipts = () => page.locator('a[href="/receipts"]:not([aria-label])').filter({ visible: true });
-  const fixed = () => page.locator('a[href="/fixed"]').filter({ visible: true });
+  const utilities = () => page.locator('a[href="/utilities"]').filter({ visible: true }).first();
   await expect(receipts()).toHaveText("Belege");
-  await expect(fixed()).toHaveText("Fixkosten");
+  await expect(utilities()).toHaveText("Nebenkosten");
 
   await page.getByTestId("language-toggle").click();
   await expect(receipts()).toHaveText("Receipts");
-  await expect(fixed()).toHaveText("Fixed costs");
+  await expect(utilities()).toHaveText("Utilities");
   await expect.poll(async () => (await context.cookies()).find((c) => c.name === "haushalt_locale")?.value).toBe("en");
 
   await page.reload();

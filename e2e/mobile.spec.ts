@@ -11,7 +11,11 @@ test("bottom tab bar is visible on phones and navigates to Belege", async ({ pag
   await tabs.getByRole("link", { name: "Belege" }).click();
   await page.waitForURL("**/receipts");
   await expect(page.getByRole("heading", { name: "Belege" })).toBeVisible();
-  await tabs.getByRole("link", { name: "Fixkosten" }).click();
+  await tabs.getByRole("link", { name: "Nebenkosten" }).click();
+  await page.waitForURL("**/utilities");
+  // fixed costs are not in the tab bar; the utilities page links to them
+  await expect(tabs.getByRole("link", { name: "Fixkosten" })).toHaveCount(0);
+  await page.locator('main a[href="/fixed"]').filter({ visible: true }).first().click();
   await page.waitForURL("**/fixed");
 });
 
