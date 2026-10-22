@@ -211,3 +211,12 @@ def test_decision_validation(client, auth, png):
 def test_bad_statement_and_login(client, auth):
     assert import_file(client, auth, b"\x00\x01binary").status_code == 422
     assert client.get("/api/v1/bank/transactions").status_code == 401
+
+
+def test_all_time_range_starts_with_the_oldest_counted_booking(client, auth):
+    cats = {c["key"]: c["id"] for c in client.get("/api/v1/categories", headers=auth).json()}
+    import_file(client, auth, csv_rows((d(40), "Online Shop", "Alt", "-30,00")))
+    [tx] = client.get("/api/v1/bank/transactions", headers=auth).json()
+    client.patch(f"/api/v1/bank/transactions/{tx['id']}", headers=auth, json={"status": "counted", "category_id": cats["lifestyle"]})
+    summary = client.get("/api/v1/stats/summary?range=all", headers=auth).json()
+    assert summary["start"] == d(40).isoformat() and summary["total_cents"] == 3000

@@ -42,7 +42,8 @@ def recurring_daily_cents(cost: RecurringCost) -> float:
 def first_activity(session: Session) -> date | None:
     receipt = session.scalar(select(func.min(Receipt.purchased_on)).where(Receipt.status == "confirmed"))
     recurring = session.scalar(select(func.min(RecurringCost.start_on)))
-    candidates = [d for d in (receipt, recurring) if d is not None]
+    booking = session.scalar(select(func.min(BankTransaction.booked_on)).where(BankTransaction.status == "counted"))
+    candidates = [d for d in (receipt, recurring, booking) if d is not None]
     return min(candidates) if candidates else None
 
 
