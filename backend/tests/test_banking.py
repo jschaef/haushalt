@@ -68,6 +68,27 @@ def test_parse_dkb_csv():
     assert amazon.counterparty == "Amazon Payments" and amazon.amount_cents == -2999
 
 
+# Postbank/Deutsche Bank style - header written from third-party descriptions,
+# not from a real export (format not confirmed)
+POSTBANK = (
+    "Umsätze Girokonto;Zeitraum: 30 Tage\n\n"
+    "Buchungstag;Wert;Umsatzart;Begünstigter / Auftraggeber;Verwendungszweck;IBAN / Kontonummer;BIC;"
+    "Kundenreferenz;Mandatsreferenz;Gläubiger ID;Fremde Gebühren;Betrag;Abweichender Empfänger;"
+    "Anzahl der Aufträge;Anzahl der Schecks;Soll;Haben;Währung\n"
+    "21.10.2026;21.10.2026;Kartenzahlung;EDEKA Center;EDEKA SAGT DANKE;DE05;BIC;;;;;-23,45 €;;;;-23,45;;EUR\n"
+).encode("cp1252")
+
+
+def test_parse_postbank_style_csv():
+    [edeka] = parse_csv(POSTBANK)
+    assert (edeka.counterparty, edeka.purpose, edeka.amount_cents) == ("EDEKA Center", "EDEKA SAGT DANKE", -2345)
+
+
+def test_unknown_header_names_the_first_line():
+    with pytest.raises(StatementError, match="Kontostand"):
+        parse_csv("Kontostand;irgendwas;x\n1;2;3\n".encode())
+
+
 def test_parse_debit_credit_columns():
     [bakery] = parse_csv(SOLL_HABEN)
     assert bakery.amount_cents == -340 and bakery.counterparty == "Bäckerei Heinz"

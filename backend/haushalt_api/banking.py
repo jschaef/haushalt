@@ -157,7 +157,8 @@ COLUMNS = [
     ("debit", ("soll", "debit", "ausgang")),
     ("credit", ("haben", "credit", "eingang")),
     ("counterparty", (
-        "beguenstigter zahlungspflichtiger", "zahlungsempfaenger in", "zahlungspflichtige r", "auftraggeber empfaenger",
+        "beguenstigter zahlungspflichtiger", "beguenstigter auftraggeber", "zahlungsempfaenger in", "zahlungspflichtige r",
+        "auftraggeber empfaenger", "zahlungsempfaenger",
         "empfaenger", "auftraggeber", "name", "payee", "counterparty", "gegenseite",
     )),
     ("purpose", ("verwendungszweck", "purpose", "beschreibung", "description", "buchungstext")),
@@ -204,7 +205,9 @@ def parse_csv(data: bytes) -> list[Booking]:
             header_index, mapping = index, candidate
             break
     if header_index is None:
-        raise StatementError("No header with date and amount columns found")
+        # name what was seen, so an unknown bank format can be added quickly
+        first = next((line for line in lines if line.strip()), "")[:200]
+        raise StatementError(f"No header with date and amount columns found (first line: {first!r})")
     reader = csv.reader(io.StringIO("\n".join(lines[header_index + 1 :])), delimiter=delimiter)
     bookings = []
     for row in reader:
