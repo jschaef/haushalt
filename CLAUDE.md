@@ -70,6 +70,11 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   photos are cut into tiles (the API downsizes to ~1568 px). Model
   `HAUSHALT_RECEIPT_MODEL` (default `claude-opus-5-5`, server-side fallback on).
 - Categories: learned rule (normalized item text) → model suggestion → store default.
+- Tags (Jochen, 2026-10-23; `tags_api.py`): for whom/what for, next to the one
+  category, only on bank bookings (status `counted`) and recurring costs.
+  Tag sums overlap (no shares). Learned per bank counterparty like the
+  category (`TagRule`, the latest decision replaces the set). `tag_ids`
+  missing in a recurring update keeps the tags.
 - Utilities (`utilities.py`, `utilities_api.py`): meters, readings (must count
   up), tariffs, bills. The dashboard counts the instalments only; consumption
   costs and the settlement forecast live on the utilities page (no double

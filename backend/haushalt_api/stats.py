@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankTransaction, Category, Receipt, RecurringCost
+from .db import BankTransaction, Category, Receipt, RecurringCost, Tag
 
 DAYS_PER_MONTH = 365.25 / 12
 OTHER = "other"
@@ -71,6 +71,8 @@ def _period_totals(session: Session, period: Period, categories: dict[int, Categ
     """cents per category key plus per-store and per-day sums of variable spending."""
     other_id = next((c.id for c in categories.values() if c.key == OTHER), None)
     by_category: dict[str, float] = defaultdict(float)
+    # tags overlap (an entry can have several), so their sums are no shares
+    by_tag: dict[int, float] = defaultdict(float)
     by_store: dict[str, list] = {}
     daily: dict[date, int] = defaultdict(int)
     receipts = session.scalars(
@@ -108,6 +110,8 @@ def _period_totals(session: Session, period: Period, categories: dict[int, Categ
         cents = -booking.amount_cents
         category = categories.get(booking.category_id) if booking.category_id else None
         by_category[category.key if category else OTHER] += cents
+        for tag in booking.tags:
+            by_tag[tag.id] += cents
         if category is None or category.kind == "variable":
             daily[booking.booked_on] += cents
         entry = by_store.setdefault(booking.counterparty or "?", [0, 0])
@@ -117,8 +121,11 @@ def _period_totals(session: Session, period: Period, categories: dict[int, Categ
         days = overlap_days(cost.start_on, cost.end_on, period)
         if days:
             category = categories.get(cost.category_id) if cost.category_id else None
-            by_category[category.key if category else OTHER] += recurring_daily_cents(cost) * days
-    return {"by_category": by_category, "by_store": by_store, "daily": daily, "receipt_count": len(receipts)}
+            cents = recurring_daily_cents(cost) * days
+            by_category[category.key if category else OTHER] += cents
+            for tag in cost.tags:
+                by_tag[tag.id] += cents
+    return {"by_category": by_category, "by_tag": by_tag, "by_store": by_store, "daily": daily, "receipt_count": len(receipts)}
 
 
 def summary(session: Session, period: Period) -> dict:
@@ -169,6 +176,14 @@ def summary(session: Session, period: Period) -> dict:
                 }
                 for key, cents in current["by_category"].items()
                 if round(cents)
+            ),
+            key=lambda row: -row["cents"],
+        ),
+        "by_tag": sorted(
+            (
+                {"id": tag.id, "name": tag.name, "color": tag.color, "cents": round(current["by_tag"][tag.id])}
+                for tag in session.scalars(select(Tag))
+                if round(current["by_tag"].get(tag.id, 0))
             ),
             key=lambda row: -row["cents"],
         ),

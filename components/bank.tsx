@@ -9,15 +9,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type BankTransaction, type BookingDecision, type BookingStatus, type Category, type ReceiptCandidate, type Recurring } from "@/lib/api";
+import { TagChips, TagFilter, TagPicker } from "@/components/tags";
+import { api, type BankTransaction, type BookingDecision, type BookingStatus, type Category, type ReceiptCandidate, type Recurring, type Tag } from "@/lib/api";
 import { money, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
+import { byName } from "@/lib/sort";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
 import { cn } from "@/lib/utils";
 
+// min-w-0: a select is otherwise as wide as its longest option and pushes
+// the button next to it off narrow screens
 const SELECT_CLASS =
-  "h-8 w-full appearance-none rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
+  "h-8 w-full min-w-0 appearance-none rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
 type Filter = BookingStatus | "all";
 const FILTERS: Filter[] = ["review", "receipt", "fixed", "counted", "ignored", "all"];
@@ -32,10 +36,14 @@ const BADGE_CLASS: Record<BookingStatus, string> = {
 
 const categoryName = (c: Category, locale: Locale) => (locale === "de" ? c.name_de : c.name_en);
 
+type TagProps = { tags: Tag[]; onTagCreated: (tag: Tag) => void };
+
 function DecisionPanel({
   booking,
   categories,
   recurring,
+  tags,
+  onTagCreated,
   onDecide,
   onDelete,
 }: {
@@ -44,12 +52,13 @@ function DecisionPanel({
   recurring: Recurring[];
   onDecide: (decision: BookingDecision) => Promise<void>;
   onDelete: () => void;
-}) {
+} & TagProps) {
   const { t, locale } = useI18n();
   const uid = useId();
   const candidates = useData<ReceiptCandidate[]>(() => api.candidates(booking.id), `candidates:${booking.id}`);
   const [recurringId, setRecurringId] = useState<string>(booking.recurring_id ? String(booking.recurring_id) : "");
   const [categoryId, setCategoryId] = useState<string>(booking.category_id ? String(booking.category_id) : "");
+  const [tagIds, setTagIds] = useState<number[]>(booking.tag_ids);
   const [busy, setBusy] = useState(false);
 
   async function decide(decision: BookingDecision) {
@@ -62,7 +71,9 @@ function DecisionPanel({
   }
 
   return (
-    <div className="mt-3 grid gap-4 border-t border-border/60 pt-3 md:grid-cols-2" data-testid="booking-panel">
+    // grid-cols-1: without it the single column on phones is as wide as its
+    // widest content (a long tag or category name) and runs off the screen
+    <div className="mt-3 grid grid-cols-1 gap-4 border-t border-border/60 pt-3 md:grid-cols-2" data-testid="booking-panel">
       <section className="space-y-2">
         <h3 className="text-sm font-medium">{t("bank.belongsToReceipt")}</h3>
         {candidates.loading && !candidates.data ? (
@@ -99,7 +110,7 @@ function DecisionPanel({
           <div className="flex gap-2">
             <select id={`${uid}-fixed`} value={recurringId} onChange={(e) => setRecurringId(e.target.value)} className={SELECT_CLASS}>
               <option value="">–</option>
-              {recurring.map((r) => (
+              {byName(recurring, (r) => r.name, locale).map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
                 </option>
@@ -117,7 +128,7 @@ function DecisionPanel({
         <div className="flex gap-2">
           <select id={`${uid}-category`} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={SELECT_CLASS}>
             <option value="">{t("receipt.uncategorized")}</option>
-            {categories.map((c) => (
+            {byName(categories, (c) => categoryName(c, locale), locale).map((c) => (
               <option key={c.id} value={c.id}>
                 {categoryName(c, locale)}
               </option>
@@ -127,12 +138,13 @@ function DecisionPanel({
             size="sm"
             variant="outline"
             disabled={busy || !categoryId}
-            onClick={() => decide({ status: "counted", category_id: Number(categoryId) })}
+            onClick={() => decide({ status: "counted", category_id: Number(categoryId), tag_ids: tagIds })}
           >
             {t("bank.assign")}
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">{t("bank.countsHint")}</p>
+        <TagPicker tags={tags} selected={tagIds} onChange={setTagIds} onCreated={onTagCreated} />
       </section>
 
       <section className="flex flex-wrap items-end gap-2">
@@ -158,6 +170,8 @@ function BookingRow({
   booking,
   categories,
   recurring,
+  tags,
+  onTagCreated,
   onDecide,
   onDelete,
 }: {
@@ -166,7 +180,7 @@ function BookingRow({
   recurring: Recurring[];
   onDecide: (decision: BookingDecision) => Promise<void>;
   onDelete: () => void;
-}) {
+} & TagProps) {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -212,10 +226,24 @@ function BookingRow({
               {categoryName(category, locale)}
             </span>
           )}
+          {/* a fixed booking shows the tags of its recurring cost */}
+          <div className="mt-1">
+            <TagChips ids={booking.status === "fixed" ? (cost?.tag_ids ?? []) : booking.tag_ids} tags={tags} />
+          </div>
         </div>
       )}
       <div id={panelId}>
-        {open && <DecisionPanel booking={booking} categories={categories} recurring={recurring} onDecide={onDecide} onDelete={onDelete} />}
+        {open && (
+          <DecisionPanel
+            booking={booking}
+            categories={categories}
+            recurring={recurring}
+            tags={tags}
+            onTagCreated={onTagCreated}
+            onDecide={onDecide}
+            onDelete={onDelete}
+          />
+        )}
       </div>
     </li>
   );
@@ -230,10 +258,15 @@ export function Bank() {
   const bookings = useData(() => api.transactions(), "bank");
   const categories = useData(() => api.categories(), "categories");
   const recurring = useData(() => api.recurring(), "recurring");
+  const tagList = useData(() => api.tags(), "tags");
+  const [tagFilter, setTagFilter] = useState<number | null>(null);
 
   const all = bookings.data ?? [];
+  const tags = tagList.data ?? [];
+  const addTag = (tag: Tag) => tagList.setData([...tags, tag].sort((a, b) => a.name.localeCompare(b.name)));
+  const tagsOf = (b: BankTransaction) => (b.status === "fixed" ? (recurring.data?.find((r) => r.id === b.recurring_id)?.tag_ids ?? []) : b.tag_ids);
   const count = (status: Filter) => (status === "all" ? all.length : all.filter((b) => b.status === status).length);
-  const visible = all.filter((b) => filter === "all" || b.status === filter);
+  const visible = all.filter((b) => (filter === "all" || b.status === filter) && (tagFilter === null || tagsOf(b).includes(tagFilter)));
 
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -336,6 +369,8 @@ export function Bank() {
         ))}
       </div>
 
+      <TagFilter tags={tags} value={tagFilter} onChange={setTagFilter} />
+
       {bookings.error ? (
         <p className="glass rounded-2xl p-6 text-destructive">{bookings.error.message}</p>
       ) : !bookings.data || !categories.data || !recurring.data ? (
@@ -354,6 +389,8 @@ export function Bank() {
               booking={booking}
               categories={categories.data ?? []}
               recurring={recurring.data ?? []}
+              tags={tags}
+              onTagCreated={addTag}
               onDecide={(decision) => decide(booking, decision)}
               onDelete={() => void remove(booking)}
             />

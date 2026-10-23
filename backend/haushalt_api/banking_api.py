@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from . import banking, config
 from .auth import current_user
 from .db import BankTransaction, Category, Receipt, RecurringCost, get_session
+from .tags_api import resolve_tags
 
 router = APIRouter(prefix="/api/v1/bank", dependencies=[Depends(current_user)])
 STATUSES = ("review", "receipt", "fixed", "counted", "ignored")
@@ -27,6 +28,7 @@ class TransactionOut(BaseModel):
     receipt_id: int | None
     recurring_id: int | None
     category_id: int | None
+    tag_ids: list[int]
 
 
 class TransactionPatch(BaseModel):
@@ -34,10 +36,13 @@ class TransactionPatch(BaseModel):
     receipt_id: int | None = None
     recurring_id: int | None = None
     category_id: int | None = None
+    # only with status counted (a receipt or recurring cost has its own)
+    tag_ids: list[int] = Field(default_factory=list, max_length=20)
 
 
 def _out(tx: BankTransaction) -> TransactionOut:
-    return TransactionOut.model_validate(tx, from_attributes=True)
+    data = {name: getattr(tx, name) for name in TransactionOut.model_fields if name != "tag_ids"}
+    return TransactionOut(**data, tag_ids=[tag.id for tag in tx.tags])
 
 
 def _transaction(session: Session, tx_id: int) -> BankTransaction:
@@ -94,6 +99,7 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
     """A person's decision; exactly the link the status needs is kept."""
     tx = _transaction(session, tx_id)
     tx.receipt_id = tx.recurring_id = tx.category_id = None
+    tx.tags = []
     if body.status == "receipt":
         receipt = session.get(Receipt, body.receipt_id) if body.receipt_id else None
         if receipt is None:
@@ -112,6 +118,7 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
         if not body.category_id or session.get(Category, body.category_id) is None:
             raise HTTPException(status_code=422, detail="category_id required")
         tx.category_id = body.category_id
+        tx.tags = resolve_tags(session, body.tag_ids)
         banking.learn_counterparty(session, tx)
     tx.status = body.status
     session.commit()

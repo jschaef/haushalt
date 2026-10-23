@@ -21,10 +21,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from defusedxml import ElementTree
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankTransaction, CategoryRule, Receipt, RecurringCost
+from .db import BankTransaction, CategoryRule, Receipt, RecurringCost, Tag, TagRule
 from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
@@ -300,24 +300,32 @@ def match(session: Session, tx: BankTransaction) -> None:
     if len(recurring) == 1:
         tx.status, tx.recurring_id = "fixed", recurring[0].id
         return
-    # column limit (PostgreSQL enforces it, SQLite does not)
-    pattern = (RULE_PREFIX + normalize(tx.counterparty))[:256]
+    pattern = counterparty_pattern(tx)
     rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern)) if tx.counterparty else None
     if rule is not None:
         rule.hits += 1
         tx.status, tx.category_id = "counted", rule.category_id
+        tx.tags = list(session.scalars(select(Tag).join(TagRule, TagRule.tag_id == Tag.id).where(TagRule.pattern == pattern)))
+
+
+def counterparty_pattern(tx: BankTransaction) -> str:
+    # column limit (PostgreSQL enforces it, SQLite does not)
+    return (RULE_PREFIX + normalize(tx.counterparty))[:256]
 
 
 def learn_counterparty(session: Session, tx: BankTransaction) -> None:
+    """Remembers category and tags of a counted booking for its counterparty."""
     if not tx.counterparty or tx.category_id is None:
         return
-    # column limit (PostgreSQL enforces it, SQLite does not)
-    pattern = (RULE_PREFIX + normalize(tx.counterparty))[:256]
+    pattern = counterparty_pattern(tx)
     rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern))
     if rule is None:
         session.add(CategoryRule(pattern=pattern, category_id=tx.category_id))
     else:
         rule.category_id = tx.category_id
+    # the latest decision wins, also for the tags
+    session.execute(delete(TagRule).where(TagRule.pattern == pattern))
+    session.add_all(TagRule(pattern=pattern, tag_id=tag.id) for tag in tx.tags)
 
 
 def import_statement(session: Session, data: bytes) -> dict:

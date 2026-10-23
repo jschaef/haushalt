@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import { useTheme } from "next-themes";
-import { Check, Copy, KeyRound, Plus, ShieldCheck, UserCheck, UserX } from "lucide-react";
+import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Tile } from "@/components/bento";
 import { Badge } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PasswordForm } from "@/components/password-form";
-import { api, type Category, type OneTimePassword, type User } from "@/lib/api";
+import { api, type Category, type OneTimePassword, type Tag, type User } from "@/lib/api";
 import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -498,6 +498,83 @@ function CategoriesTile() {
   );
 }
 
+function TagRow({ tag, onChanged }: { tag: Tag; onChanged: () => void }) {
+  const { t } = useI18n();
+  const uid = useId();
+  const [name, setName] = useState(tag.name);
+  const [color, setColor] = useState(tag.color);
+  const [busy, setBusy] = useState(false);
+  const dirty = name.trim() !== tag.name || color !== tag.color;
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await action();
+      onChanged();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-end gap-2 rounded-xl bg-muted/40 px-3 py-2" data-testid="tag-row">
+      <div className="min-w-40 flex-1 space-y-1">
+        <Label htmlFor={`${uid}-name`} className="text-xs">
+          {t("tags.name")}
+        </Label>
+        <Input id={`${uid}-name`} value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${uid}-color`} className="text-xs">
+          {t("tags.color")}
+        </Label>
+        <input id={`${uid}-color`} type="color" value={color} onChange={(e) => setColor(e.target.value)} className={COLOR_CLASS} />
+      </div>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy || !dirty || !name.trim()}
+        aria-label={t("tags.rename", { name: tag.name })}
+        onClick={() => void run(() => api.updateTag(tag.id, { name: name.trim(), color }))}
+      >
+        {t("common.save")}
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="text-destructive"
+        disabled={busy}
+        aria-label={t("tags.delete", { name: tag.name })}
+        onClick={() => window.confirm(t("tags.deleteConfirm", { name: tag.name })) && void run(() => api.deleteTag(tag.id))}
+      >
+        <Trash2 />
+      </Button>
+    </li>
+  );
+}
+
+function TagsTile() {
+  const { t } = useI18n();
+  const tags = useData(() => api.tags(), "tags");
+  return (
+    <Tile index={6} title={t("tags.title")} className="md:col-span-2" testId="tags-tile">
+      {!tags.data ? (
+        <Skeleton className="h-16 rounded-xl" />
+      ) : tags.data.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("tags.empty")}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {tags.data.map((tag) => (
+            <TagRow key={`${tag.id}:${tag.name}:${tag.color}`} tag={tag} onChanged={() => void tags.reload()} />
+          ))}
+        </ul>
+      )}
+    </Tile>
+  );
+}
+
 export function Settings() {
   const { t } = useI18n();
   return (
@@ -510,6 +587,7 @@ export function Settings() {
         <PasswordTile />
         <MembersTile />
         <CategoriesTile />
+        <TagsTile />
       </div>
     </div>
   );

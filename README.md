@@ -19,6 +19,9 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
 - **Bank statements:** import CAMT (XML) or CSV exports; bookings are matched
   with receipts and fixed costs automatically, the rest waits for a decision,
   so nothing is counted twice.
+- **Tags:** fixed costs and bank bookings can carry tags next to their
+  category (for whom or what for, e.g. a person or a holiday), with their own
+  sums on the dashboard and filters; tags of a counterparty are learned.
 - **Household:** several members, shared data, German and English UI. Admins
   add members and reset passwords with one-time passwords; passwords follow
   NIST SP 800-63B (at least 12 characters, no common or leaked passwords).

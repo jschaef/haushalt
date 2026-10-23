@@ -53,6 +53,8 @@ export type Summary = {
   previous_total_cents: number;
   average: { total: Averages; variable: Averages; fixed: Averages };
   by_category: { key: string; name_de: string; name_en: string; color: string; kind: string; cents: number }[];
+  // tags overlap: no shares, every tag counts the full amount
+  by_tag: { id: number; name: string; color: string; cents: number }[];
   by_store: { name: string; cents: number; count: number }[];
   daily: { date: string; cents: number }[];
 };
@@ -66,8 +68,14 @@ export type Recurring = {
   start_on: string;
   end_on: string | null;
   meter_id: number | null;
+  tag_ids: number[];
   daily_cents: number;
 };
+
+export type Tag = { id: number; name: string; color: string };
+
+// without tag_ids an update keeps the tags
+export type RecurringBody = Omit<Recurring, "id" | "daily_cents" | "meter_id" | "tag_ids"> & { meter_id?: number | null; tag_ids?: number[] };
 
 export type UtilityKind = "electricity" | "gas" | "water" | "heat" | "other";
 
@@ -158,6 +166,7 @@ export type BankTransaction = {
   receipt_id: number | null;
   recurring_id: number | null;
   category_id: number | null;
+  tag_ids: number[];
 };
 
 export type ImportResult = { read: number; imported: number; duplicates: number } & Record<BookingStatus, number>;
@@ -169,6 +178,7 @@ export type BookingDecision = {
   receipt_id?: number | null;
   recurring_id?: number | null;
   category_id?: number | null;
+  tag_ids?: number[];
 };
 
 export type User = {
@@ -247,6 +257,10 @@ export const api = {
   createCategory: (body: Omit<Category, "id">) => request<Category>("categories", json("POST", body)),
   updateCategory: (id: number, body: Omit<Category, "id">) => request<Category>(`categories/${id}`, json("PUT", body)),
   stores: () => request<Store[]>("stores"),
+  tags: () => request<Tag[]>("tags"),
+  createTag: (body: Omit<Tag, "id">) => request<Tag>("tags", json("POST", body)),
+  updateTag: (id: number, body: Omit<Tag, "id">) => request<Tag>(`tags/${id}`, json("PUT", body)),
+  deleteTag: (id: number) => request<void>(`tags/${id}`, { method: "DELETE" }),
   receipts: (status?: "draft" | "confirmed") => request<Receipt[]>(status ? `receipts?status=${status}` : "receipts"),
   receipt: (id: number) => request<Receipt>(`receipts/${id}`),
   upload: (files: File[]) => {
@@ -261,8 +275,8 @@ export const api = {
   deleteReceipt: (id: number) => request<void>(`receipts/${id}`, { method: "DELETE" }),
   fileUrl: (id: number) => `/api/v1/receipts/${id}/file`,
   recurring: () => request<Recurring[]>("recurring"),
-  createRecurring: (body: Omit<Recurring, "id" | "daily_cents" | "meter_id"> & { meter_id?: number | null }) => request<Recurring>("recurring", json("POST", body)),
-  updateRecurring: (id: number, body: Omit<Recurring, "id" | "daily_cents" | "meter_id"> & { meter_id?: number | null }) =>
+  createRecurring: (body: RecurringBody) => request<Recurring>("recurring", json("POST", body)),
+  updateRecurring: (id: number, body: RecurringBody) =>
     request<Recurring>(`recurring/${id}`, json("PUT", body)),
   deleteRecurring: (id: number) => request<void>(`recurring/${id}`, { method: "DELETE" }),
   summary: (range: Range) => request<Summary>(`stats/summary?range=${range}`),
