@@ -67,7 +67,7 @@
   --ring: oklch(0.6 0.18 275);
   --chart-1: oklch(0.6 0.2 275);
   --chart-2: oklch(0.7 0.16 165);
-  --chart-3: oklch(0.58 0.14 65);
+  --chart-3: #8a4500; /* 4.44:1 before, below AA on white; now 7.2:1, 5.5:1 on its own 20 % tint */
   --chart-4: oklch(0.65 0.2 350);
   --chart-5: oklch(0.65 0.15 230);
   --glass: oklch(1 0 0 / 65%);
@@ -216,6 +216,17 @@
 :is(.contrast, .contrast-light)::view-transition-old(*),
 :is(.contrast, .contrast-light)::view-transition-new(*) {
   animation: none !important;
+}
+
+/* Toasts (sonner, richColors) in the light theme: its own text colours are
+   below WCAG AA on their tinted backgrounds (success 4.26, info 4.35,
+   warning 3.08, error 4.35 : 1). These reach 6.4 to 9.9 : 1. html raises the
+   specificity above sonner's own rule, whatever the stylesheet order. */
+html [data-sonner-toaster][data-sonner-theme="light"] {
+  --success-text: #006b24;
+  --info-text: #0033a0;
+  --warning-text: #8a4500;
+  --error-text: #a30000;
 }
 
 @layer base {
