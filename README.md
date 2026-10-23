@@ -19,7 +19,9 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
 - **Bank statements:** import CAMT (XML) or CSV exports; bookings are matched
   with receipts and fixed costs automatically, the rest waits for a decision,
   so nothing is counted twice.
-- **Household:** several members, shared data, German and English UI.
+- **Household:** several members, shared data, German and English UI. Admins
+  add members and reset passwords with one-time passwords; passwords follow
+  NIST SP 800-63B (at least 12 characters, no common or leaked passwords).
 - **Modern UI:** bento dashboard, glass design, dark mode, animations, view
   transitions, command palette (Ctrl/⌘ K), swipe gestures on the phone.
 - **Accessible:** light, dark and two high-contrast modes for low vision, on
@@ -55,6 +57,23 @@ tailnet only. Put exactly that address into `HAUSHALT_PUBLIC_ORIGIN` in
 `deployment/.env` (the login checks where requests come from) and restart the
 web container. (Command from the Tailscale documentation as known to the
 author; not tested in this repository's CI.)
+
+### Members and passwords
+
+The first account is the household admin. Admins add members in the settings:
+the app shows a one-time password once, which the member replaces at the first
+login. A reset works the same way and ends all sessions of that account;
+admins can also appoint further admins and disable accounts. Passwords need at
+least 12 characters and must not be common, leaked or contain the name; there
+are no special-character rules and no forced changes (NIST SP 800-63B).
+
+If no admin can log in any more, run in the API container:
+
+```bash
+docker compose -f deployment/compose.yaml exec api python -m haushalt_api.admin list
+docker compose -f deployment/compose.yaml exec api python -m haushalt_api.admin reset-password <username>
+docker compose -f deployment/compose.yaml exec api python -m haushalt_api.admin make-admin <username>
+```
 
 ### Data and backups
 
