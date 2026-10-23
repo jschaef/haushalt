@@ -68,20 +68,35 @@ def test_parse_dkb_csv():
     assert amazon.counterparty == "Amazon Payments" and amazon.amount_cents == -2999
 
 
-# Postbank/Deutsche Bank style - header written from third-party descriptions,
-# not from a real export (format not confirmed)
+# Postbank: structure of a real "Kontoumsätze" export (2026-10-23) - UTF-8 with
+# BOM, account block and balance lines before the table, a closing balance
+# line after it, amounts without currency sign. All values here are made up.
 POSTBANK = (
-    "Umsätze Girokonto;Zeitraum: 30 Tage\n\n"
+    "Umsätze\n"
+    "Konto;Filial-/Kontonummer;IBAN;Währung\n"
+    "Postbank Giro plus;000 0000000 00;DE00000000000000000000;EUR\n"
+    "\n"
+    "01.10.2026 - 23.10.2026\n"
+    "Letzter Kontostand;;;;1.000,00;EUR\n"
+    "Vorgemerkte und noch nicht gebuchte Umsätze sind nicht Bestandteil dieser Übersicht.\n"
     "Buchungstag;Wert;Umsatzart;Begünstigter / Auftraggeber;Verwendungszweck;IBAN / Kontonummer;BIC;"
     "Kundenreferenz;Mandatsreferenz;Gläubiger ID;Fremde Gebühren;Betrag;Abweichender Empfänger;"
     "Anzahl der Aufträge;Anzahl der Schecks;Soll;Haben;Währung\n"
-    "21.10.2026;21.10.2026;Kartenzahlung;EDEKA Center;EDEKA SAGT DANKE;DE05;BIC;;;;;-23,45 €;;;;-23,45;;EUR\n"
-).encode("cp1252")
+    "23.10.2026;23.10.2026;SEPA Lastschrift;Beispiel Lotterie GmbH;beispiel.de 123 vom 21.10.2026;"
+    "DE11111111111111111111;;REF-1;M-1;DE00ZZZ00000000000;;-9;Beispiel.de;;;-9;;EUR\n"
+    "21.10.2026;21.10.2026;Kartenzahlung;EDEKA Center;EDEKA SAGT DANKE;DE22222222222222222222;;;;;;-23,45;;;;-23,45;;EUR\n"
+    "20.10.2026;20.10.2026;Gutschrift;Arbeitgeber AG;Gehalt Oktober;DE33333333333333333333;;;;;;1.234,56;;;;;1.234,56;EUR\n"
+    "Kontostand;23.10.2026;;;2.202,11;EUR\n"
+).encode("utf-8-sig")
 
 
-def test_parse_postbank_style_csv():
-    [edeka] = parse_csv(POSTBANK)
+def test_parse_postbank_csv():
+    lotto, edeka, salary = parse_csv(POSTBANK)
+    assert (lotto.booked_on, lotto.amount_cents, lotto.counterparty) == (date(2026, 10, 23), -900, "Beispiel Lotterie GmbH")
+    assert lotto.purpose == "beispiel.de 123 vom 21.10.2026" and lotto.iban == "DE11111111111111111111"
     assert (edeka.counterparty, edeka.purpose, edeka.amount_cents) == ("EDEKA Center", "EDEKA SAGT DANKE", -2345)
+    # income and the balance lines before/after the table are no expenses
+    assert salary.amount_cents == 123456
 
 
 def test_unknown_header_names_the_first_line():
