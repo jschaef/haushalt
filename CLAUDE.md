@@ -108,6 +108,10 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 - A reverse proxy must pass the Host header with port (Origin check).
 - `HAUSHALT_COOKIE_SECURE=true` (default in production) needs HTTPS, else
   login silently fails because the browser drops the cookie.
+- Podman builds OCI images and drops `HEALTHCHECK`; compose `depends_on:
+  service_healthy` needs the health checks in `compose.yaml` itself. Podman
+  runs health checks from systemd timers, so in a container without systemd
+  they never run (test with `podman healthcheck run` in a loop).
 - In cloud sessions Docker Hub may answer 429: build with
   `--build-arg REGISTRY=mirror.gcr.io/library`; the session proxy's CA must be
   added to test base images (see the cloud-inbox note on container builds).

@@ -37,6 +37,11 @@ Three containers: PostgreSQL (`db`), the API and the web app. Only the web app
 is published, and only on `127.0.0.1:3200` of the host. The first visitor
 creates the household account; more members are added in the settings.
 
+With Podman (also on macOS): give the Podman machine at least 4 GB of memory
+for the web build (`podman machine set --memory 4096` while it is stopped).
+The health checks are part of `compose.yaml`, because Podman drops
+`HEALTHCHECK` from images it builds in its default OCI format.
+
 ### Access from the tailnet
 
 Login cookies are `Secure`, so the app needs HTTPS. Tailscale provides it:
