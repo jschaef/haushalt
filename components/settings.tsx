@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PasswordForm } from "@/components/password-form";
-import { api, type Category, type OneTimePassword, type Tag, type User } from "@/lib/api";
+import { api, type BankAccount, type BankAccountInput, type Category, type OneTimePassword, type Tag, type User } from "@/lib/api";
 import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -575,6 +575,154 @@ function TagsTile() {
   );
 }
 
+type AccountDraft = BankAccountInput;
+
+function AccountFields({ idPrefix, draft, onChange }: { idPrefix: string; draft: AccountDraft; onChange: (d: Partial<AccountDraft>) => void }) {
+  const { t } = useI18n();
+  return (
+    <>
+      <div className="min-w-0 space-y-1">
+        <Label htmlFor={`${idPrefix}-name`} className="text-xs">
+          {t("accounts.name")}
+        </Label>
+        <Input id={`${idPrefix}-name`} value={draft.name} maxLength={64} onChange={(e) => onChange({ name: e.target.value })} />
+      </div>
+      <div className="min-w-0 space-y-1">
+        <Label htmlFor={`${idPrefix}-bank`} className="text-xs">
+          {t("accounts.bank")}
+        </Label>
+        <Input id={`${idPrefix}-bank`} value={draft.bank} maxLength={64} onChange={(e) => onChange({ bank: e.target.value })} />
+      </div>
+      <div className="min-w-0 space-y-1">
+        <Label htmlFor={`${idPrefix}-iban`} className="text-xs">
+          {t("accounts.iban")}
+        </Label>
+        <Input
+          id={`${idPrefix}-iban`}
+          value={draft.iban}
+          maxLength={42}
+          autoCapitalize="characters"
+          spellCheck={false}
+          className="font-mono"
+          onChange={(e) => onChange({ iban: e.target.value })}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor={`${idPrefix}-color`} className="text-xs">
+          {t("accounts.color")}
+        </Label>
+        <input id={`${idPrefix}-color`} type="color" value={draft.color} onChange={(e) => onChange({ color: e.target.value })} className={COLOR_CLASS} />
+      </div>
+    </>
+  );
+}
+
+function accountError(error: unknown, t: (key: MessageKey) => string): string {
+  const message = (error as Error).message;
+  return message === "invalid_iban" ? t("accounts.invalidIban") : message;
+}
+
+function AccountRow({ account, onChanged }: { account: BankAccount; onChanged: () => void }) {
+  const { t } = useI18n();
+  const uid = useId();
+  const [draft, setDraft] = useState<AccountDraft>({ name: account.name, bank: account.bank, iban: account.iban, color: account.color });
+  const [busy, setBusy] = useState(false);
+  const dirty =
+    draft.name.trim() !== account.name || draft.bank.trim() !== account.bank || draft.iban.replace(/\s/g, "").toUpperCase() !== account.iban || draft.color !== account.color;
+
+  async function run(action: () => Promise<unknown>) {
+    setBusy(true);
+    try {
+      await action();
+      onChanged();
+    } catch (error) {
+      toast.error(accountError(error, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="space-y-2 rounded-xl bg-muted/40 px-3 py-2" data-testid="account-row">
+      <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+        <AccountFields idPrefix={uid} draft={draft} onChange={(changes) => setDraft({ ...draft, ...changes })} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted-foreground">{t("accounts.bookings", { n: account.bookings })}</span>
+        <Button
+          size="sm"
+          variant="outline"
+          className="ml-auto"
+          disabled={busy || !dirty || !draft.name.trim()}
+          aria-label={t("accounts.save", { name: account.name })}
+          onClick={() => void run(() => api.updateAccount(account.id, draft))}
+        >
+          {t("common.save")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive"
+          disabled={busy}
+          aria-label={t("accounts.delete", { name: account.name })}
+          onClick={() => window.confirm(t("accounts.deleteConfirm", { name: account.name })) && void run(() => api.deleteAccount(account.id))}
+        >
+          <Trash2 />
+        </Button>
+      </div>
+    </li>
+  );
+}
+
+function AccountsTile() {
+  const { t } = useI18n();
+  const accounts = useData(() => api.accounts(), "accounts");
+  const empty: AccountDraft = { name: "", bank: "", iban: "", color: "#64748b" };
+  const [draft, setDraft] = useState<AccountDraft>(empty);
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.name.trim()) return;
+    setBusy(true);
+    try {
+      await api.createAccount(draft);
+      setDraft(empty);
+      await accounts.reload();
+    } catch (error) {
+      toast.error(accountError(error, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile index={7} title={t("accounts.title")} className="md:col-span-2" testId="accounts-tile">
+      <p className="text-sm text-muted-foreground">{t("accounts.hint")}</p>
+      {!accounts.data ? (
+        <Skeleton className="h-16 rounded-xl" />
+      ) : accounts.data.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("accounts.empty")}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {accounts.data.map((account) => (
+            <AccountRow key={`${account.id}:${account.name}:${account.bank}:${account.iban}:${account.color}:${account.bookings}`} account={account} onChanged={() => void accounts.reload()} />
+          ))}
+        </ul>
+      )}
+      <form onSubmit={submit} className="space-y-3 border-t pt-3">
+        <h3 className="text-sm font-medium">{t("accounts.add")}</h3>
+        <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+          <AccountFields idPrefix="account-new" draft={draft} onChange={(changes) => setDraft({ ...draft, ...changes })} />
+        </div>
+        <Button type="submit" disabled={busy || !draft.name.trim()}>
+          <Plus /> {t("accounts.add")}
+        </Button>
+      </form>
+    </Tile>
+  );
+}
+
 export function Settings() {
   const { t } = useI18n();
   return (
@@ -588,6 +736,7 @@ export function Settings() {
         <MembersTile />
         <CategoriesTile />
         <TagsTile />
+        <AccountsTile />
       </div>
     </div>
   );

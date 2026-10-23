@@ -126,14 +126,29 @@ export function TagPicker({
   );
 }
 
-// "all" or one tag; used to narrow lists of bookings and fixed costs
-export function TagFilter({ tags, value, onChange }: { tags: Tag[]; value: number | null; onChange: (id: number | null) => void }) {
+// "all" or one item; narrows lists by tag (or anything with id, name and
+// color, e.g. bank accounts)
+export function TagFilter({
+  tags,
+  value,
+  onChange,
+  label,
+  allLabel,
+  testId = "tag-filter",
+}: {
+  tags: Pick<Tag, "id" | "name" | "color">[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+  label?: string;
+  allLabel?: string;
+  testId?: string;
+}) {
   const { t } = useI18n();
   if (!tags.length) return null;
   return (
-    <div role="group" aria-label={t("tags.filter")} className="flex flex-wrap gap-1.5" data-testid="tag-filter">
+    <div role="group" aria-label={label ?? t("tags.filter")} className="flex flex-wrap gap-1.5" data-testid={testId}>
       <Button type="button" size="sm" variant={value === null ? "default" : "outline"} aria-pressed={value === null} onClick={() => onChange(null)}>
-        {t("tags.all")}
+        {allLabel ?? t("tags.all")}
       </Button>
       {tags.map((tag) => (
         <Button

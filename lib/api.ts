@@ -163,13 +163,25 @@ export type BankTransaction = {
   iban: string;
   purpose: string;
   status: BookingStatus;
+  account_id: number | null;
   receipt_id: number | null;
   recurring_id: number | null;
   category_id: number | null;
   tag_ids: number[];
 };
 
-export type ImportResult = { read: number; imported: number; duplicates: number } & Record<BookingStatus, number>;
+export type ImportResult = {
+  read: number;
+  imported: number;
+  duplicates: number;
+  // bookings between two own accounts (ignored, they are no spending)
+  transfers: number;
+  account_id: number | null;
+  account_name: string | null;
+} & Record<BookingStatus, number>;
+
+export type BankAccount = { id: number; name: string; bank: string; iban: string; color: string; bookings: number };
+export type BankAccountInput = Pick<BankAccount, "name" | "bank" | "iban" | "color">;
 
 export type ReceiptCandidate = { id: number; store_name: string; purchased_on: string | null; total_cents: number; store_matches: boolean };
 
@@ -313,13 +325,20 @@ export const api = {
   applyBill: (id: number) => request<{ tariff: boolean; instalment: boolean }>(`bills/${id}/apply`, { method: "POST" }),
   deleteBill: (id: number) => request<void>(`bills/${id}`, { method: "DELETE" }),
   billFileUrl: (id: number) => `/api/v1/bills/${id}/file`,
-  importStatement: (file: File) => {
+  // without accountId the API takes the account from the statement's IBAN
+  importStatement: (file: File, accountId?: number | null) => {
     const form = new FormData();
     form.append("file", file);
+    if (accountId) form.append("account_id", String(accountId));
     return request<ImportResult>("bank/import", { method: "POST", body: form });
   },
+  accounts: () => request<BankAccount[]>("bank/accounts"),
+  createAccount: (body: BankAccountInput) => request<BankAccount>("bank/accounts", json("POST", body)),
+  updateAccount: (id: number, body: BankAccountInput) => request<BankAccount>(`bank/accounts/${id}`, json("PUT", body)),
+  deleteAccount: (id: number) => request<void>(`bank/accounts/${id}`, { method: "DELETE" }),
+  // all bookings (the API returns the newest 500 without a limit)
   transactions: (status?: BookingStatus) =>
-    request<BankTransaction[]>(status ? `bank/transactions?status=${status}` : "bank/transactions"),
+    request<BankTransaction[]>(status ? `bank/transactions?status=${status}&limit=20000` : "bank/transactions?limit=20000"),
   candidates: (id: number) => request<ReceiptCandidate[]>(`bank/transactions/${id}/candidates`),
   decide: (id: number, decision: BookingDecision) => request<BankTransaction>(`bank/transactions/${id}`, json("PATCH", decision)),
   rematch: () => request<{ matched: number }>("bank/rematch", { method: "POST" }),

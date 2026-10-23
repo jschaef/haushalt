@@ -2,14 +2,14 @@
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import banking, config
 from .auth import current_user
-from .db import BankTransaction, Category, Receipt, RecurringCost, get_session
+from .db import BankAccount, BankTransaction, Category, Receipt, RecurringCost, get_session
 from .tags_api import resolve_tags
 
 router = APIRouter(prefix="/api/v1/bank", dependencies=[Depends(current_user)])
@@ -25,6 +25,7 @@ class TransactionOut(BaseModel):
     iban: str
     purpose: str
     status: str
+    account_id: int | None
     receipt_id: int | None
     recurring_id: int | None
     category_id: int | None
@@ -45,6 +46,76 @@ def _out(tx: BankTransaction) -> TransactionOut:
     return TransactionOut(**data, tag_ids=[tag.id for tag in tx.tags])
 
 
+class AccountIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    bank: str = Field(default="", max_length=64)
+    iban: str = Field(default="", max_length=42)
+    color: str = Field(default="#64748b", pattern=r"^#[0-9a-fA-F]{6}$")
+
+
+class AccountOut(BaseModel):
+    id: int
+    name: str
+    bank: str
+    iban: str
+    color: str
+    bookings: int
+
+
+def _account_out(session: Session, account: BankAccount) -> AccountOut:
+    count = session.scalar(select(func.count(BankTransaction.id)).where(BankTransaction.account_id == account.id)) or 0
+    return AccountOut(id=account.id, name=account.name, bank=account.bank, iban=account.iban, color=account.color, bookings=count)
+
+
+def _clean_account(session: Session, body: AccountIn, own_id: int | None = None) -> dict:
+    iban = banking.normalize_iban(body.iban)
+    if iban and not banking.valid_iban(iban):
+        raise HTTPException(status_code=422, detail="invalid_iban")
+    if iban:
+        other = session.scalar(select(BankAccount).where(BankAccount.iban == iban))
+        if other is not None and other.id != own_id:
+            raise HTTPException(status_code=409, detail="Account with this IBAN exists")
+    return {"name": " ".join(body.name.split()), "bank": body.bank.strip(), "iban": iban, "color": body.color}
+
+
+def _account(session: Session, account_id: int) -> BankAccount:
+    account = session.get(BankAccount, account_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return account
+
+
+@router.get("/accounts", response_model=list[AccountOut])
+def list_accounts(session: Session = Depends(get_session)):
+    return [_account_out(session, a) for a in session.scalars(select(BankAccount).order_by(func.lower(BankAccount.name)))]
+
+
+@router.post("/accounts", response_model=AccountOut, status_code=201)
+def create_account(body: AccountIn, session: Session = Depends(get_session)):
+    account = BankAccount(**_clean_account(session, body))
+    session.add(account)
+    session.flush()
+    # bookings waiting for review may be transfers to this account
+    banking.rematch(session)
+    return _account_out(session, account)
+
+
+@router.put("/accounts/{account_id}", response_model=AccountOut)
+def update_account(account_id: int, body: AccountIn, session: Session = Depends(get_session)):
+    account = _account(session, account_id)
+    for field, value in _clean_account(session, body, account.id).items():
+        setattr(account, field, value)
+    banking.rematch(session)
+    return _account_out(session, account)
+
+
+@router.delete("/accounts/{account_id}", status_code=204)
+def delete_account(account_id: int, session: Session = Depends(get_session)):
+    """The bookings stay, without an account."""
+    session.delete(_account(session, account_id))
+    session.commit()
+
+
 def _transaction(session: Session, tx_id: int) -> BankTransaction:
     tx = session.get(BankTransaction, tx_id)
     if tx is None:
@@ -53,12 +124,20 @@ def _transaction(session: Session, tx_id: int) -> BankTransaction:
 
 
 @router.post("/import")
-async def import_statement(file: UploadFile = File(...), session: Session = Depends(get_session)):
+async def import_statement(
+    file: UploadFile = File(...),
+    # empty: recognised from the statement (IBAN), else bookings without account
+    account_id: int | None = Form(default=None),
+    session: Session = Depends(get_session),
+):
     data = await file.read(config.MAX_UPLOAD_BYTES + 1)
     if len(data) > config.MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File too large")
     try:
-        return banking.import_statement(session, data)
+        return banking.import_statement(session, data, account_id)
+    except banking.AccountMismatch as exc:
+        session.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
     except banking.StatementError as exc:
         session.rollback()
         raise HTTPException(status_code=422, detail=str(exc))
@@ -67,7 +146,8 @@ async def import_statement(file: UploadFile = File(...), session: Session = Depe
 @router.get("/transactions", response_model=list[TransactionOut])
 def list_transactions(
     status: str | None = Query(default=None, pattern="^(" + "|".join(STATUSES) + ")$"),
-    limit: int = Query(default=500, ge=1, le=5000),
+    # the bank page loads all bookings (a year can hold well over 500)
+    limit: int = Query(default=500, ge=1, le=20000),
     session: Session = Depends(get_session),
 ):
     query = select(BankTransaction).order_by(BankTransaction.booked_on.desc(), BankTransaction.id.desc()).limit(limit)

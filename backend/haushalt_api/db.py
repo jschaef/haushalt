@@ -238,6 +238,19 @@ class Tariff(Base):
     base_fee_monthly_cents: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class BankAccount(Base):
+    """One of the household's own accounts. Bookings of a statement belong to
+    it; transfers to or from another own account count nowhere."""
+
+    __tablename__ = "bank_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    bank: Mapped[str] = mapped_column(String(64), default="")
+    # normalized (no spaces, upper case); empty when the statements never say
+    iban: Mapped[str] = mapped_column(String(34), default="", index=True)
+    color: Mapped[str] = mapped_column(String(7), default="#64748b")
+
+
 class BankTransaction(Base):
     """One booking from a bank statement. amount_cents < 0 is money going out.
 
@@ -259,6 +272,7 @@ class BankTransaction(Base):
     purpose: Mapped[str] = mapped_column(String(512), default="")
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
     status: Mapped[str] = mapped_column(String(16), default="review", index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     receipt_id: Mapped[int | None] = mapped_column(ForeignKey("receipts.id", ondelete="SET NULL"))
     recurring_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_costs.id", ondelete="SET NULL"))
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
@@ -355,6 +369,7 @@ _LATER_COLUMNS = {
         "token_version": "INTEGER NOT NULL DEFAULT 0",
     },
     "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
+    "bank_transactions": {"account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL"},
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {
         "ingest_token_hash": "VARCHAR(64) NOT NULL DEFAULT ''",

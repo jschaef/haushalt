@@ -10,7 +10,18 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TagChips, TagFilter, TagPicker } from "@/components/tags";
-import { api, type BankTransaction, type BookingDecision, type BookingStatus, type Category, type ReceiptCandidate, type Recurring, type Tag } from "@/lib/api";
+import {
+  api,
+  type BankAccount,
+  type BankTransaction,
+  type BookingDecision,
+  type BookingStatus,
+  type Category,
+  type ReceiptCandidate,
+  type Recurring,
+  type Tag,
+} from "@/lib/api";
+import { SORT_KEYS, bookingYears, filterBookings, sortBookings, type CategoryFilter, type SortKey } from "@/lib/bank-view";
 import { money, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -23,8 +34,14 @@ import { cn } from "@/lib/utils";
 const SELECT_CLASS =
   "h-8 w-full min-w-0 appearance-none rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring/50 dark:bg-input/30";
 
-type Filter = BookingStatus | "all";
-const FILTERS: Filter[] = ["review", "receipt", "fixed", "counted", "ignored", "all"];
+// "income": every booking with money coming in, whatever its status
+type Filter = BookingStatus | "income" | "all";
+const FILTERS: Filter[] = ["review", "receipt", "fixed", "counted", "ignored", "income", "all"];
+
+const ibanKey = (iban: string) => iban.replace(/\s/g, "").toUpperCase();
+
+// rows rendered at once; thousands of bookings would slow phones down
+const PAGE = 100;
 
 const BADGE_CLASS: Record<BookingStatus, string> = {
   review: "bg-chart-3/20 text-chart-3",
@@ -170,6 +187,8 @@ function BookingRow({
   booking,
   categories,
   recurring,
+  accounts,
+  ownIbans,
   tags,
   onTagCreated,
   onDecide,
@@ -178,6 +197,8 @@ function BookingRow({
   booking: BankTransaction;
   categories: Category[];
   recurring: Recurring[];
+  accounts: BankAccount[];
+  ownIbans: Set<string>;
   onDecide: (decision: BookingDecision) => Promise<void>;
   onDelete: () => void;
 } & TagProps) {
@@ -186,6 +207,9 @@ function BookingRow({
   const panelId = useId();
   const category = categories.find((c) => c.id === booking.category_id);
   const cost = recurring.find((r) => r.id === booking.recurring_id);
+  const account = accounts.find((a) => a.id === booking.account_id);
+  // money moved between two own accounts: ignored, it is no spending
+  const transfer = booking.status === "ignored" && booking.iban !== "" && ownIbans.has(ibanKey(booking.iban));
 
   return (
     <li className="glass rounded-2xl p-3" data-testid="booking-row">
@@ -203,13 +227,21 @@ function BookingRow({
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium">{booking.counterparty || t("bank.noCounterparty")}</div>
           <div className="truncate text-xs text-muted-foreground">{booking.purpose || t("bank.noCounterparty")}</div>
-          <div className="mt-0.5 text-xs text-muted-foreground">{shortDate(booking.booked_on, locale)}</div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+            <span>{shortDate(booking.booked_on, locale)}</span>
+            {account && (
+              <span className="inline-flex min-w-0 items-center gap-1" data-testid="booking-account">
+                <span className="size-2 shrink-0 rounded-full ring-1 ring-foreground/40" style={{ background: account.color }} aria-hidden />
+                <span className="truncate">{account.name}</span>
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className={cn("tabular font-semibold", booking.amount_cents < 0 ? "text-negative" : "text-positive")}>
             {money(booking.amount_cents, locale, booking.currency)}
           </span>
-          <Badge className={BADGE_CLASS[booking.status]}>{t(`bank.${booking.status}`)}</Badge>
+          <Badge className={BADGE_CLASS[booking.status]}>{transfer ? t("bank.transfer") : t(`bank.${booking.status}`)}</Badge>
         </div>
       </div>
       {(booking.status === "receipt" || booking.status === "fixed" || booking.status === "counted") && (
@@ -250,7 +282,7 @@ function BookingRow({
 }
 
 export function Bank() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const uid = useId();
   const input = useRef<HTMLInputElement>(null);
   const [filter, setFilter] = useState<Filter>("review");
@@ -259,14 +291,43 @@ export function Bank() {
   const categories = useData(() => api.categories(), "categories");
   const recurring = useData(() => api.recurring(), "recurring");
   const tagList = useData(() => api.tags(), "tags");
+  const accountList = useData(() => api.accounts(), "accounts");
   const [tagFilter, setTagFilter] = useState<number | null>(null);
+  const [accountFilter, setAccountFilter] = useState<number | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("date_desc");
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>(null);
+  const [year, setYear] = useState<number | null>(null);
+  const [shown, setShown] = useState(PAGE);
+  // the account a statement is imported into; "" = recognised from its IBAN
+  const [importAccount, setImportAccount] = useState("");
+  const accounts = accountList.data ?? [];
+  const ownIbans = new Set(accounts.map((a) => a.iban).filter(Boolean));
 
   const all = bookings.data ?? [];
   const tags = tagList.data ?? [];
   const addTag = (tag: Tag) => tagList.setData([...tags, tag].sort((a, b) => a.name.localeCompare(b.name)));
   const tagsOf = (b: BankTransaction) => (b.status === "fixed" ? (recurring.data?.find((r) => r.id === b.recurring_id)?.tag_ids ?? []) : b.tag_ids);
-  const count = (status: Filter) => (status === "all" ? all.length : all.filter((b) => b.status === status).length);
-  const visible = all.filter((b) => (filter === "all" || b.status === filter) && (tagFilter === null || tagsOf(b).includes(tagFilter)));
+  const inView = (b: BankTransaction, view: Filter) => view === "all" || (view === "income" ? b.amount_cents > 0 : b.status === view);
+  const count = (status: Filter) => all.filter((b) => inView(b, status)).length;
+  const visible = sortBookings(
+    filterBookings(
+      all.filter(
+        (b) => inView(b, filter) && (tagFilter === null || tagsOf(b).includes(tagFilter)) && (accountFilter === null || b.account_id === accountFilter),
+      ),
+      { category: categoryFilter, year },
+      recurring.data ?? [],
+    ),
+    sortKey,
+    { categories: categories.data ?? [], recurring: recurring.data ?? [], locale },
+  );
+  const years = bookingYears(all);
+  // a changed view starts at the top again
+  const change =
+    <T,>(set: (value: T) => void) =>
+    (value: T) => {
+      set(value);
+      setShown(PAGE);
+    };
 
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -274,11 +335,17 @@ export function Bank() {
     if (!file) return;
     setBusy(true);
     try {
-      const r = await api.importStatement(file);
+      const r = await api.importStatement(file, importAccount ? Number(importAccount) : null);
       toast.success(
-        t("bank.imported", { imported: r.imported, duplicates: r.duplicates, receipt: r.receipt, fixed: r.fixed, counted: r.counted, review: r.review }),
+        [
+          t("bank.imported", { imported: r.imported, duplicates: r.duplicates, receipt: r.receipt, fixed: r.fixed, counted: r.counted, review: r.review }),
+          r.account_name ? t("bank.importedTo", { name: r.account_name }) : "",
+          r.transfers ? t("bank.transfers", { n: r.transfers }) : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
-      await bookings.reload();
+      await Promise.all([bookings.reload(), accountList.reload()]);
     } catch (error) {
       toast.error((error as Error).message);
     } finally {
@@ -331,7 +398,24 @@ export function Bank() {
 
       <Tile index={0} title={t("bank.importTitle")}>
         <p className="text-sm text-muted-foreground">{t("bank.importHint")}</p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="min-w-0 space-y-1.5">
+            <Label htmlFor={`${uid}-account`}>{t("bank.account")}</Label>
+            <select
+              id={`${uid}-account`}
+              value={importAccount}
+              onChange={(e) => setImportAccount(e.target.value)}
+              className={cn(SELECT_CLASS, "min-w-48")}
+              data-testid="import-account"
+            >
+              <option value="">{t("bank.accountAuto")}</option>
+              {byName(accounts, (a) => a.name, locale).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <input
             id={`${uid}-file`}
             ref={input}
@@ -357,7 +441,7 @@ export function Bank() {
             key={value}
             role="tab"
             aria-selected={filter === value}
-            onClick={() => setFilter(value)}
+            onClick={() => change(setFilter)(value)}
             className={cn(
               "whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground",
               filter === value && "bg-primary text-primary-foreground",
@@ -369,7 +453,69 @@ export function Bank() {
         ))}
       </div>
 
-      <TagFilter tags={tags} value={tagFilter} onChange={setTagFilter} />
+      <TagFilter tags={tags} value={tagFilter} onChange={change(setTagFilter)} />
+      {accounts.length > 1 && (
+        <TagFilter
+          tags={byName(accounts, (a) => a.name, locale)}
+          value={accountFilter}
+          onChange={change(setAccountFilter)}
+          label={t("bank.accountFilter")}
+          allLabel={t("bank.allAccounts")}
+          testId="account-filter"
+        />
+      )}
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="bank-toolbar">
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor={`${uid}-sort`} className="text-xs">
+            {t("bank.sort")}
+          </Label>
+          <select id={`${uid}-sort`} value={sortKey} onChange={(e) => change(setSortKey)(e.target.value as SortKey)} className={SELECT_CLASS}>
+            {SORT_KEYS.map((key) => (
+              <option key={key} value={key}>
+                {t(`bank.sort.${key}` as MessageKey)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor={`${uid}-catfilter`} className="text-xs">
+            {t("bank.categoryFilter")}
+          </Label>
+          <select
+            id={`${uid}-catfilter`}
+            value={categoryFilter === null ? "" : String(categoryFilter)}
+            onChange={(e) => change(setCategoryFilter)(e.target.value === "" ? null : e.target.value === "none" ? "none" : Number(e.target.value))}
+            className={SELECT_CLASS}
+          >
+            <option value="">{t("bank.allCategories")}</option>
+            <option value="none">{t("bank.noCategory")}</option>
+            {byName(categories.data ?? [], (c) => categoryName(c, locale), locale).map((c) => (
+              <option key={c.id} value={c.id}>
+                {categoryName(c, locale)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor={`${uid}-year`} className="text-xs">
+            {t("bank.year")}
+          </Label>
+          <select
+            id={`${uid}-year`}
+            value={year ?? ""}
+            onChange={(e) => change(setYear)(e.target.value ? Number(e.target.value) : null)}
+            className={SELECT_CLASS}
+          >
+            <option value="">{t("bank.allYears")}</option>
+            {years.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {bookings.error ? (
         <p className="glass rounded-2xl p-6 text-destructive">{bookings.error.message}</p>
@@ -383,12 +529,14 @@ export function Bank() {
         <p className="glass rounded-2xl p-6 text-center text-muted-foreground">{t("bank.empty")}</p>
       ) : (
         <ul className="space-y-2">
-          {visible.map((booking) => (
+          {visible.slice(0, shown).map((booking) => (
             <BookingRow
               key={booking.id}
               booking={booking}
               categories={categories.data ?? []}
               recurring={recurring.data ?? []}
+              accounts={accounts}
+              ownIbans={ownIbans}
               tags={tags}
               onTagCreated={addTag}
               onDecide={(decision) => decide(booking, decision)}
@@ -396,6 +544,14 @@ export function Bank() {
             />
           ))}
         </ul>
+      )}
+      {visible.length > shown && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="outline" onClick={() => setShown((n) => n + PAGE)}>
+            {t("bank.showMore", { n: Math.min(PAGE, visible.length - shown) })}
+          </Button>
+          <span className="text-sm text-muted-foreground">{t("bank.shownOf", { shown, total: visible.length })}</span>
+        </div>
       )}
     </div>
   );

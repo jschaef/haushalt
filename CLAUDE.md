@@ -88,6 +88,13 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   detection by whole words. Booking status decides counting: only `counted`
   enters the statistics (`receipt`/`fixed` are counted through the receipt or
   recurring cost). Deleting those reopens linked bookings.
+- Own accounts (Jochen, 2026-10-23; `BankAccount`): the statement's IBAN
+  (CAMT `Acct`, CSV preamble, checked with mod 97) picks or creates the
+  account, a chosen account must match it (409). A booking whose
+  counterparty IBAN is an own account is a transfer -> `ignored` (also on
+  rematch, run when an account is saved). Fingerprints stay without the
+  account so old imports still dedupe. Income is `ignored` too; the bank
+  page has an "Eingänge" view for it.
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,
