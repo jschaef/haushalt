@@ -56,6 +56,13 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   SQLite; set `HAUSHALT_TEST_DATABASE_URL` to run them on PostgreSQL (CI
   job `backend-postgres`). PostgreSQL enforces string lengths - truncate.
 - All household members share all data; receipts remember the uploader.
+- Members (Jochen, 2026-10-23): the first account is admin; only admins add
+  members, reset passwords and disable accounts. Adding and resetting give a
+  one-time password (`must_change_password`): until it is replaced every
+  route behind `current_user` answers 403 `password_change_required`, only
+  `session_user` routes (`/me`, `/me/password`) work. Raising
+  `users.token_version` ends all sessions of an account (password change,
+  reset, disabling). Emergency CLI: `python -m haushalt_api.admin`.
 - Money is integer cents everywhere. Statistics (`backend/haushalt_api/stats.py`):
   calendar days, only confirmed receipts, recurring costs spread over their
   interval, variable vs. fixed by category kind.
@@ -96,7 +103,13 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 - Gateway accepts only plain path segments (no `..`).
 - Uploads: type from magic bytes, size limit, Pillow pixel limit; files are
   served with `nosniff` and a sandbox CSP.
-- Login: scrypt hashes, per-user/address failure limit, revocable tokens.
+- Login: scrypt hashes (NFKC-normalized), per-user/address failure limit,
+  revocable tokens plus a per-account token version.
+- Password policy (`passwords.py`, NIST SP 800-63B, Jochen: 12 characters):
+  length, a list of common/leaked passwords (`data/common-passwords.txt.gz`,
+  SecLists, MIT), context words, repeated/sequential characters; no
+  composition rules, no forced rotation. `lib/password.ts` mirrors the
+  length rule for hints only.
 - Security headers (CSP, frame-ancestors none) in `next.config.ts`.
 - Containers run unprivileged, read-only, all capabilities dropped.
 
@@ -108,6 +121,10 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 - A reverse proxy must pass the Host header with port (Origin check).
 - `HAUSHALT_COOKIE_SECURE=true` (default in production) needs HTTPS, else
   login silently fails because the browser drops the cookie.
+- Podman builds OCI images and drops `HEALTHCHECK`; compose `depends_on:
+  service_healthy` needs the health checks in `compose.yaml` itself. Podman
+  runs health checks from systemd timers, so in a container without systemd
+  they never run (test with `podman healthcheck run` in a loop).
 - In cloud sessions Docker Hub may answer 429: build with
   `--build-arg REGISTRY=mirror.gcr.io/library`; the session proxy's CA must be
   added to test base images (see the cloud-inbox note on container builds).

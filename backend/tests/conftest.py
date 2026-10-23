@@ -24,6 +24,9 @@ from haushalt_api.db import Base, engine, init_db  # noqa: E402
 from haushalt_api.main import app  # noqa: E402
 from haushalt_api.ratelimit import login_limiter  # noqa: E402
 
+# meets the password policy (12+ characters, not common, no username)
+PASSWORD = "Kassenbon-Sommer-2026"
+
 PNG_1PX = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
     "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
@@ -48,7 +51,7 @@ def client():
 @pytest.fixture
 def auth(client):
     """Headers of a logged-in first user."""
-    response = client.post("/api/v1/signup", json={"username": "jochen", "password": "secret123"})
+    response = client.post("/api/v1/signup", json={"username": "jochen", "password": PASSWORD})
     assert response.status_code == 201, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 

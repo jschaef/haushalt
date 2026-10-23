@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
-export const USER = { username: "jochen", password: "secret123" };
+// meets the password policy (12+ characters, not common, no username)
+export const USER = { username: "jochen", password: "Kassenbon-Sommer-2026" };
 
 // 1x1 PNG; the fake receipt reader accepts any file with valid magic bytes.
 export const PNG = Buffer.from(

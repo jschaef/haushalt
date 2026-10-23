@@ -171,7 +171,17 @@ export type BookingDecision = {
   category_id?: number | null;
 };
 
-export type User = { id: number; username: string; display_name: string; locale: "de" | "en" };
+export type User = {
+  id: number;
+  username: string;
+  display_name: string;
+  locale: "de" | "en";
+  is_admin: boolean;
+  disabled: boolean;
+  must_change_password: boolean;
+};
+
+export type OneTimePassword = { user: User; one_time_password: string };
 
 export type Store = { id: number; name: string; default_category_id: number | null; receipts: number; total_cents: number };
 
@@ -181,9 +191,22 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    // codes for the UI, e.g. the reasons of a rejected password
+    public reasons: string[] = [],
   ) {
     super(message);
   }
+}
+
+// FastAPI answers {detail: "text"} or {detail: {code, reasons}}
+export function errorFrom(status: number, body: { detail?: unknown }, fallback: string): ApiError {
+  const detail = body.detail;
+  if (typeof detail === "string") return new ApiError(status, detail);
+  if (detail && typeof detail === "object" && "code" in detail) {
+    const { code, reasons } = detail as { code: unknown; reasons?: unknown };
+    return new ApiError(status, String(code), Array.isArray(reasons) ? reasons.map(String) : []);
+  }
+  return new ApiError(status, fallback);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -195,9 +218,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(401, "Not logged in");
   }
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    const detail = typeof body.detail === "string" ? body.detail : response.statusText;
-    throw new ApiError(response.status, detail);
+    const error = errorFrom(response.status, await response.json().catch(() => ({})), response.statusText);
+    if (error.message === "password_change_required" && typeof window !== "undefined") {
+      // logged in with a one-time password: replace it first
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = `/password?next=${encodeURIComponent(window.location.pathname)}`;
+    }
+    throw error;
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
@@ -209,11 +236,13 @@ function json(method: string, body: unknown): RequestInit {
 
 export const api = {
   me: () => request<User>("me"),
-  updateMe: (patch: Partial<Pick<User, "display_name" | "locale">> & { password?: string }) =>
-    request<User>("me", json("PATCH", patch)),
+  updateMe: (patch: Partial<Pick<User, "display_name" | "locale">>) => request<User>("me", json("PATCH", patch)),
   users: () => request<User[]>("users"),
-  addUser: (body: { username: string; password: string; display_name?: string }) =>
-    request<User>("users", json("POST", body)),
+  addUser: (body: { username: string; display_name?: string; is_admin?: boolean }) =>
+    request<OneTimePassword>("users", json("POST", body)),
+  resetPassword: (id: number) => request<OneTimePassword>(`users/${id}/reset-password`, { method: "POST" }),
+  updateUser: (id: number, patch: Partial<Pick<User, "display_name" | "is_admin" | "disabled">>) =>
+    request<User>(`users/${id}`, json("PATCH", patch)),
   categories: () => request<Category[]>("categories"),
   createCategory: (body: Omit<Category, "id">) => request<Category>("categories", json("POST", body)),
   updateCategory: (id: number, body: Omit<Category, "id">) => request<Category>(`categories/${id}`, json("PUT", body)),

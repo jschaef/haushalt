@@ -9,6 +9,7 @@ from typing import Iterator
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     Date,
     DateTime,
     ForeignKey,
@@ -49,6 +50,13 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(256))
     locale: Mapped[str] = mapped_column(String(8), default="de")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # admins add members, reset passwords and disable accounts
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    # after a reset the one-time password only allows setting a new one
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False)
+    # part of every token; raising it ends all sessions of the account
+    token_version: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class RevokedToken(Base):
@@ -287,6 +295,11 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _add_missing_columns()
     with SessionLocal() as session:
+        # databases from before the admin role: the first account becomes admin
+        if session.scalar(select(User.id).where(User.is_admin)) is None:
+            first = session.scalar(select(User).order_by(User.id).limit(1))
+            if first is not None:
+                first.is_admin = True
         existing = set(session.scalars(select(Category.key)))
         for key, de, en, kind, color, icon in DEFAULT_CATEGORIES:
             if key not in existing:
@@ -297,6 +310,12 @@ def init_db() -> None:
 # Columns added after the first release. create_all() creates new tables but
 # never alters existing ones, so older databases get them here.
 _LATER_COLUMNS = {
+    "users": {
+        "is_admin": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "disabled": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "must_change_password": "BOOLEAN NOT NULL DEFAULT FALSE",
+        "token_version": "INTEGER NOT NULL DEFAULT 0",
+    },
     "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {

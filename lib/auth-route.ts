@@ -3,15 +3,16 @@ import { SESSION_COOKIE, apiUrl, cookieSecure } from "@/lib/session";
 
 // Shared by the login and signup route handlers (app/api/auth/*).
 
-export type TokenResponse = { access_token: string; token_type: string; expires_at: number };
+export type TokenResponse = { access_token: string; token_type: string; expires_at: number; must_change_password?: boolean };
 
 // POSTs JSON to the API and turns a token answer into the session cookie.
-export async function tokenRequest(path: string, body: unknown): Promise<NextResponse> {
+// The token itself never reaches the browser's JavaScript.
+export async function tokenRequest(path: string, body: unknown, bearer?: string): Promise<NextResponse> {
   let upstream: Response;
   try {
     upstream = await fetch(`${apiUrl()}/api/v1/${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
       body: JSON.stringify(body),
       cache: "no-store",
     });
@@ -22,7 +23,8 @@ export async function tokenRequest(path: string, body: unknown): Promise<NextRes
   if (!upstream.ok) {
     return NextResponse.json({ detail: data.detail ?? "Request failed" }, { status: upstream.status });
   }
-  return setSession(NextResponse.json({ ok: true }), data as TokenResponse);
+  const token = data as TokenResponse;
+  return setSession(NextResponse.json({ ok: true, must_change_password: Boolean(token.must_change_password) }), token);
 }
 
 export function setSession(response: NextResponse, token: TokenResponse) {

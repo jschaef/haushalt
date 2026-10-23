@@ -2,6 +2,7 @@ import io
 
 from PIL import Image
 
+from conftest import PASSWORD
 from haushalt_api.extraction import ExtractionError, image_tiles, sniff
 from haushalt_api.ratelimit import FailureLimiter, login_limiter
 
@@ -59,7 +60,7 @@ def test_login_rate_limited(client, auth):
         for _ in range(5):
             assert client.post("/api/v1/token", json={"username": "jochen", "password": "nope"}).status_code == 401
         # blocked now, even with the right password
-        response = client.post("/api/v1/token", json={"username": "jochen", "password": "secret123"})
+        response = client.post("/api/v1/token", json={"username": "jochen", "password": PASSWORD})
         assert response.status_code == 429
     finally:
         login_limiter._failures.clear()
