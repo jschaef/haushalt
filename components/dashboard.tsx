@@ -270,6 +270,10 @@ function DailyChart({ summary }: { summary: Summary }) {
 
 function CategoryBreakdown({ summary }: { summary: Summary }) {
   const { t, locale } = useI18n();
+  const { resolvedTheme } = useTheme();
+  // low-vision modes: the category colors are the household's choice, so the
+  // segments get an outline in the text color (WCAG 1.4.11, 3:1 for graphics)
+  const outline = resolvedTheme === "contrast" ? "#ffffff" : resolvedTheme === "contrast-light" ? "#000000" : null;
   const total = summary.by_category.reduce((sum, c) => sum + c.cents, 0);
   const option = useMemo<ChartOption>(
     () => ({
@@ -279,7 +283,7 @@ function CategoryBreakdown({ summary }: { summary: Summary }) {
           type: "pie",
           radius: ["62%", "88%"],
           padAngle: 2,
-          itemStyle: { borderRadius: 6 },
+          itemStyle: outline ? { borderRadius: 6, borderColor: outline, borderWidth: 2 } : { borderRadius: 6 },
           label: { show: false },
           data: summary.by_category.map((c) => ({
             name: locale === "de" ? c.name_de : c.name_en,
@@ -289,7 +293,7 @@ function CategoryBreakdown({ summary }: { summary: Summary }) {
         },
       ],
     }),
-    [summary, locale],
+    [summary, locale, outline],
   );
   if (!total) return <p className="text-sm text-muted-foreground">{t("dash.empty")}</p>;
   return (
@@ -298,7 +302,7 @@ function CategoryBreakdown({ summary }: { summary: Summary }) {
       <ul className="space-y-1.5 text-sm">
         {summary.by_category.slice(0, 7).map((c) => (
           <li key={c.key} className="flex items-center gap-2">
-            <span className="size-2.5 rounded-full" style={{ background: c.color }} />
+            <span className={cn("size-2.5 rounded-full", outline && "ring-2 ring-foreground")} style={{ background: c.color }} />
             <span className="flex-1 truncate">{locale === "de" ? c.name_de : c.name_en}</span>
             <span className="tabular text-muted-foreground">{money(c.cents, locale)}</span>
             <span className="tabular w-10 text-right text-xs text-muted-foreground">{((c.cents / total) * 100).toFixed(0)} %</span>
