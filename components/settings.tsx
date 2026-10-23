@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PasswordForm } from "@/components/password-form";
 import { api, type Category, type OneTimePassword, type User } from "@/lib/api";
+import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
@@ -302,6 +303,33 @@ function MembersTile() {
 
 type CategoryDraft = { key: string; name_de: string; name_en: string; kind: Category["kind"]; color: string };
 
+// The key is an internal id; anything typed is turned into a valid one, and
+// without input it comes from the German name. The hint shows the result.
+function KeyField({ idPrefix, draft, onChange }: { idPrefix: string; draft: CategoryDraft; onChange: (changes: Partial<CategoryDraft>) => void }) {
+  const { t } = useI18n();
+  const key = effectiveKey(draft.key, draft.name_de);
+  const invalid = (draft.key.trim() !== "" || draft.name_de.trim() !== "") && !KEY_RE.test(key);
+  return (
+    <div className="space-y-1.5">
+      <Label htmlFor={`${idPrefix}-key`}>{t("settings.key")}</Label>
+      <Input
+        id={`${idPrefix}-key`}
+        value={draft.key}
+        placeholder={toCategoryKey(draft.name_de)}
+        maxLength={64}
+        autoCapitalize="none"
+        aria-invalid={invalid}
+        aria-describedby={`${idPrefix}-key-hint`}
+        onChange={(e) => onChange({ key: e.target.value })}
+      />
+      <p id={`${idPrefix}-key-hint`} className="text-xs text-muted-foreground" data-testid="category-key-hint">
+        {key ? t("settings.keySaved", { key }) : t("settings.keyHint")}
+        {invalid && ` ${t("settings.keyTooShort")}`}
+      </p>
+    </div>
+  );
+}
+
 function CategoryFields({
   idPrefix,
   draft,
@@ -316,20 +344,7 @@ function CategoryFields({
   const { t } = useI18n();
   return (
     <>
-      {withKey && (
-        <div className="space-y-1.5">
-          <Label htmlFor={`${idPrefix}-key`}>{t("settings.key")}</Label>
-          <Input
-            id={`${idPrefix}-key`}
-            value={draft.key}
-            pattern="^[a-z0-9_]+$"
-            minLength={2}
-            maxLength={48}
-            autoCapitalize="none"
-            onChange={(e) => onChange({ key: e.target.value })}
-          />
-        </div>
-      )}
+      {withKey && <KeyField idPrefix={idPrefix} draft={draft} onChange={onChange} />}
       <div className="space-y-1.5">
         <Label htmlFor={`${idPrefix}-de`}>{t("settings.nameDe")}</Label>
         <Input id={`${idPrefix}-de`} value={draft.name_de} onChange={(e) => onChange({ name_de: e.target.value })} />
@@ -353,7 +368,6 @@ function CategoryFields({
   );
 }
 
-const KEY_RE = /^[a-z0-9_]{2,48}$/;
 
 function CategoryRow({ category, onSaved }: { category: Category; onSaved: () => Promise<void> }) {
   const { t, locale } = useI18n();
@@ -434,7 +448,8 @@ function CategoriesTile() {
   const empty: CategoryDraft = { key: "", name_de: "", name_en: "", kind: "variable", color: "#6366f1" };
   const [draft, setDraft] = useState<CategoryDraft>(empty);
   const [busy, setBusy] = useState(false);
-  const valid = KEY_RE.test(draft.key) && draft.name_de.trim() !== "" && draft.name_en.trim() !== "";
+  const key = effectiveKey(draft.key, draft.name_de);
+  const valid = KEY_RE.test(key) && draft.name_de.trim() !== "" && draft.name_en.trim() !== "";
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -442,7 +457,7 @@ function CategoriesTile() {
     setBusy(true);
     try {
       await api.createCategory({
-        key: draft.key,
+        key,
         name_de: draft.name_de.trim(),
         name_en: draft.name_en.trim(),
         kind: draft.kind,
