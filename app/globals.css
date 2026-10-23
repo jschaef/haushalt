@@ -1,0 +1,312 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* the dark high-contrast theme is dark as well ("contrast-light" is not) */
+@custom-variant dark (&:is(.dark *, .contrast *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-heading: var(--font-sans);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-glass: var(--glass);
+  --color-glass-border: var(--glass-border);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* text colours (positive, negative, chart-3) meet WCAG AA on white */
+:root {
+  --background: oklch(0.985 0.004 270);
+  --foreground: oklch(0.17 0.02 270);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.02 270);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.02 270);
+  --primary: oklch(0.55 0.2 275);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.955 0.01 270);
+  --secondary-foreground: oklch(0.25 0.02 270);
+  --muted: oklch(0.955 0.01 270);
+  --muted-foreground: oklch(0.5 0.02 270);
+  --accent: oklch(0.94 0.02 275);
+  --accent-foreground: oklch(0.25 0.05 275);
+  --destructive: oklch(0.58 0.22 27);
+  --border: oklch(0.9 0.01 270);
+  --input: oklch(0.9 0.01 270);
+  --ring: oklch(0.6 0.18 275);
+  --chart-1: oklch(0.6 0.2 275);
+  --chart-2: oklch(0.7 0.16 165);
+  --chart-3: oklch(0.58 0.14 65);
+  --chart-4: oklch(0.65 0.2 350);
+  --chart-5: oklch(0.65 0.15 230);
+  --glass: oklch(1 0 0 / 65%);
+  --glass-border: oklch(0.2 0.02 270 / 8%);
+  --positive: oklch(0.5 0.13 155);
+  --negative: oklch(0.52 0.2 25);
+  --aurora-1: oklch(0.8 0.12 275 / 55%);
+  --aurora-2: oklch(0.85 0.1 175 / 45%);
+  --aurora-3: oklch(0.85 0.12 340 / 40%);
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: oklch(0.14 0.015 275);
+  --foreground: oklch(0.96 0.005 270);
+  --card: oklch(0.19 0.02 275);
+  --card-foreground: oklch(0.96 0.005 270);
+  --popover: oklch(0.2 0.02 275);
+  --popover-foreground: oklch(0.96 0.005 270);
+  --primary: oklch(0.72 0.17 275);
+  --primary-foreground: oklch(0.15 0.03 275);
+  --secondary: oklch(0.24 0.02 275);
+  --secondary-foreground: oklch(0.96 0.005 270);
+  --muted: oklch(0.24 0.02 275);
+  --muted-foreground: oklch(0.7 0.02 270);
+  --accent: oklch(0.27 0.04 275);
+  --accent-foreground: oklch(0.96 0.005 270);
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(1 0 0 / 9%);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.65 0.15 275);
+  --chart-1: oklch(0.72 0.17 275);
+  --chart-2: oklch(0.75 0.14 165);
+  --chart-3: oklch(0.8 0.14 75);
+  --chart-4: oklch(0.72 0.18 350);
+  --chart-5: oklch(0.72 0.13 230);
+  --glass: oklch(0.22 0.02 275 / 55%);
+  --glass-border: oklch(1 0 0 / 8%);
+  --positive: oklch(0.75 0.15 155);
+  --negative: oklch(0.72 0.17 25);
+  --aurora-1: oklch(0.45 0.2 275 / 45%);
+  --aurora-2: oklch(0.45 0.12 175 / 30%);
+  --aurora-3: oklch(0.45 0.18 340 / 30%);
+}
+
+/* Low-vision modes: WCAG AAA contrast, larger text, no transparency, blur or
+   motion. "contrast" is black/white/yellow, "contrast-light" black on white
+   with dark blue. The shared rules follow both palettes. */
+.contrast {
+  --background: #000000;
+  --foreground: #ffffff;
+  --card: #000000;
+  --card-foreground: #ffffff;
+  --popover: #000000;
+  --popover-foreground: #ffffff;
+  --primary: #ffe600;
+  --primary-foreground: #000000;
+  --secondary: #1a1a1a;
+  --secondary-foreground: #ffffff;
+  --muted: #1a1a1a;
+  --muted-foreground: #f0f0f0;
+  --accent: #333333;
+  --accent-foreground: #ffffff;
+  --destructive: #ff8a8a;
+  --border: #ffffff;
+  --input: #ffffff;
+  --ring: #ffe600;
+  --chart-1: #ffe600;
+  --chart-2: #5ce1ff;
+  --chart-3: #ffb347;
+  --chart-4: #ff8ad8;
+  --chart-5: #9dff8a;
+  --glass: #000000;
+  --glass-border: #ffffff;
+  --positive: #7dff9b;
+  --negative: #ff9b9b;
+}
+.contrast-light {
+  --background: #ffffff;
+  --foreground: #000000;
+  --card: #ffffff;
+  --card-foreground: #000000;
+  --popover: #ffffff;
+  --popover-foreground: #000000;
+  --primary: #0033a0;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #000000;
+  --muted: #f0f0f0;
+  --muted-foreground: #1a1a1a;
+  --accent: #e0e0e0;
+  --accent-foreground: #000000;
+  --destructive: #8b0000;
+  --border: #000000;
+  --input: #000000;
+  --ring: #0033a0;
+  --chart-1: #0033a0;
+  --chart-2: #005c66;
+  --chart-3: #8a4500;
+  --chart-4: #8f0063;
+  --chart-5: #2e5c00;
+  --glass: #ffffff;
+  --glass-border: #000000;
+  --positive: #004d1f;
+  --negative: #8b0000;
+}
+:is(.contrast, .contrast-light) {
+  --radius: 0.5rem;
+  font-size: 118.75%;
+}
+:is(.contrast, .contrast-light) .aurora {
+  display: none;
+}
+:is(.contrast, .contrast-light) .glass {
+  /* fully opaque, also where a tile sets a translucent or gradient background */
+  background: var(--background) !important;
+  border-width: 2px;
+  box-shadow: none;
+  /* no fade-in: reducedMotion="always" of the motion library stops
+     transforms only, opacity would still animate */
+  opacity: 1 !important;
+  /* reset the Tailwind backdrop variables: a hand-written backdrop-filter
+     pair loses its unprefixed half in the minifier (see .glass) */
+  --tw-backdrop-blur: ;
+  --tw-backdrop-saturate: ;
+}
+:is(.contrast, .contrast-light) .text-gradient {
+  background: none;
+  color: var(--primary);
+}
+:is(.contrast, .contrast-light) a:not([role="tab"]):not([data-slot="button"]) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+:is(.contrast, .contrast-light) :focus-visible {
+  outline: 3px solid var(--ring) !important;
+  outline-offset: 2px;
+}
+:is(.contrast, .contrast-light) *,
+:is(.contrast, .contrast-light) *::before,
+:is(.contrast, .contrast-light) *::after {
+  animation-duration: 0s !important;
+  transition-duration: 0s !important;
+}
+:is(.contrast, .contrast-light)::view-transition-group(*),
+:is(.contrast, .contrast-light)::view-transition-old(*),
+:is(.contrast, .contrast-light)::view-transition-new(*) {
+  animation: none !important;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    -webkit-tap-highlight-color: transparent;
+    /* keep focused elements clear of the sticky header and, on phones, the
+       fixed tab bar (WCAG 2.4.11 focus not obscured) */
+    scroll-padding-top: 6rem;
+    @media (width < 48rem) {
+      scroll-padding-bottom: 7rem;
+    }
+  }
+}
+
+@layer components {
+  /* soft moving colour field behind everything */
+  .aurora {
+    position: fixed;
+    inset: -20%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(40% 35% at 20% 15%, var(--aurora-1), transparent 70%),
+      radial-gradient(35% 30% at 85% 20%, var(--aurora-2), transparent 70%),
+      radial-gradient(45% 40% at 60% 95%, var(--aurora-3), transparent 70%);
+    filter: blur(40px);
+    animation: aurora-drift 28s ease-in-out infinite alternate;
+  }
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    /* utilities, not plain backdrop-filter: the CSS minifier kept only the
+       -webkit- form of a hand-written pair, which Chromium ignores */
+    @apply backdrop-blur-xl backdrop-saturate-150;
+    box-shadow:
+      0 1px 0 0 oklch(1 0 0 / 6%) inset,
+      0 10px 30px -12px oklch(0 0 0 / 18%);
+  }
+  .text-gradient {
+    background: linear-gradient(120deg, var(--primary), var(--chart-4));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate3d(3%, -2%, 0) rotate(6deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aurora {
+    animation: none;
+  }
+}
+
+/* View transitions (React <ViewTransition>): receipts morph into their detail view */
+::view-transition-group(.morph) {
+  animation-duration: 380ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-old(.fade-out) {
+  animation: 160ms ease-out both vt-fade-out;
+}
+::view-transition-new(.fade-in) {
+  animation: 240ms ease-out both vt-fade-in;
+}
+@keyframes vt-fade-out {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
