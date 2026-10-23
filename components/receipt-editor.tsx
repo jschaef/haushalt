@@ -14,6 +14,7 @@ import { api, type Category, type Item, type Receipt } from "@/lib/api";
 import { centsToInput, money, parseMoney } from "@/lib/format";
 import { haptic, useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
+import { byName } from "@/lib/sort";
 import type { Locale } from "@/lib/i18n/messages";
 import { cn } from "@/lib/utils";
 
@@ -68,7 +69,7 @@ function CategorySelect({ value, categories, onChange }: { value: number | null;
         aria-label={t("receipt.category")}
       >
         <option value="">{t("receipt.uncategorized")}</option>
-        {categories.map((c) => (
+        {byName(categories, (c) => (locale === "de" ? c.name_de : c.name_en), locale).map((c) => (
           <option key={c.id} value={c.id}>
             {locale === "de" ? c.name_de : c.name_en}
           </option>
