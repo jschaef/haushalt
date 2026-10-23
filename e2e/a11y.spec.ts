@@ -28,6 +28,15 @@ function themeClass(theme: string) {
   return new RegExp(`(^|\\s)${theme}(\\s|$)`);
 }
 
+// low-vision modes: tiles are fully opaque from the first frame (no fade-in)
+async function expectNoFadeIn(page: Page) {
+  await page.goto("/utilities");
+  await page.locator("section.glass").first().waitFor();
+  const opacities = await page.locator("section.glass").evaluateAll((els) => els.map((el) => getComputedStyle(el).opacity));
+  expect(opacities.length).toBeGreaterThan(0);
+  expect(opacities.every((o) => o === "1"), opacities.join(" ")).toBe(true);
+}
+
 test("high-contrast mode: toggle, larger text, no transparency, persists", async ({ page }) => {
   await login(page);
   await setTheme(page, "dark");
@@ -39,6 +48,7 @@ test("high-contrast mode: toggle, larger text, no transparency, persists", async
   expect(parseFloat(await html.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(19);
   const glass = page.locator(".glass").first();
   expect(await glass.evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
+  await expectNoFadeIn(page);
   expect(await page.locator("body").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(0, 0, 0)");
   // larger text must not push anything off narrow screens
   for (const path of PAGES) {
@@ -63,6 +73,7 @@ test("light low-vision mode: from the light theme, black on white, sun/moon keep
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   expect(parseFloat(await html.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(19);
   expect(await page.locator(".glass").first().evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
+  await expectNoFadeIn(page);
   const body = page.locator("body");
   expect(await body.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
   expect(await body.evaluate((el) => getComputedStyle(el).color)).toBe("rgb(0, 0, 0)");

@@ -186,6 +186,9 @@
   background: var(--background) !important;
   border-width: 2px;
   box-shadow: none;
+  /* no fade-in: reducedMotion="always" of the motion library stops
+     transforms only, opacity would still animate */
+  opacity: 1 !important;
   /* reset the Tailwind backdrop variables: a hand-written backdrop-filter
      pair loses its unprefixed half in the minifier (see .glass) */
   --tw-backdrop-blur: ;
