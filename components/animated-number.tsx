@@ -1,10 +1,20 @@
 "use client";
 
 import { animate, useMotionValue, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 
 // Counts from the previous to the new value; formatted text in every frame.
-export function AnimatedNumber({ value, format, className }: { value: number; format: (v: number) => string; className?: string }) {
+export function AnimatedNumber({
+  value,
+  format,
+  className,
+  style,
+}: {
+  value: number;
+  format: (v: number) => string;
+  className?: string;
+  style?: CSSProperties;
+}) {
   const reduced = useReducedMotion();
   const motionValue = useMotionValue(0);
   const [frame, setFrame] = useState(0);
@@ -20,7 +30,7 @@ export function AnimatedNumber({ value, format, className }: { value: number; fo
   }, [value, reduced, motionValue]);
 
   return (
-    <span className={className} data-value={value}>
+    <span className={className} style={style} data-value={value}>
       {format(reduced ? value : frame)}
     </span>
   );
