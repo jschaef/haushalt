@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .db import RevokedToken, User, get_session
+from .passwords import normalize
 
 _bearer = HTTPBearer(auto_error=False)
 _SCRYPT = {"n": 2**14, "r": 8, "p": 1}
@@ -41,8 +42,9 @@ _SECRET = _load_secret()
 
 
 def hash_password(password: str) -> str:
+    # NFKC (NIST SP 800-63B): the same password typed on another keyboard matches
     salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, **_SCRYPT)
+    digest = hashlib.scrypt(normalize(password).encode(), salt=salt, **_SCRYPT)
     return f"scrypt${salt.hex()}${digest.hex()}"
 
 
@@ -53,8 +55,12 @@ def verify_password(password: str, stored: str) -> bool:
         return False
     if scheme != "scrypt":
         return False
-    candidate = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt), **_SCRYPT)
-    return hmac.compare_digest(candidate.hex(), digest)
+    # hashes from before the normalization were made from the raw text
+    for candidate in dict.fromkeys((normalize(password), password)):
+        computed = hashlib.scrypt(candidate.encode(), salt=bytes.fromhex(salt), **_SCRYPT)
+        if hmac.compare_digest(computed.hex(), digest):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -62,6 +68,7 @@ class TokenClaims:
     user_id: int
     jti: str
     expires_at: int
+    version: int = 0
 
 
 def _b64(data: bytes) -> str:
@@ -76,9 +83,9 @@ def _sign(payload: str) -> str:
     return hmac.new(_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
-def create_token(user_id: int, ttl: int | None = None) -> dict:
+def create_token(user: User, ttl: int | None = None) -> dict:
     expires_at = int(time.time()) + (config.TOKEN_TTL_SECONDS if ttl is None else ttl)
-    claims = {"sub": user_id, "exp": expires_at, "jti": secrets.token_urlsafe(16)}
+    claims = {"sub": user.id, "exp": expires_at, "jti": secrets.token_urlsafe(16), "ver": user.token_version}
     payload = _b64(json.dumps(claims, separators=(",", ":")).encode())
     return {"access_token": f"{payload}.{_sign(payload)}", "token_type": "bearer", "expires_at": expires_at}
 
@@ -92,7 +99,7 @@ def decode_token(token: str) -> TokenClaims:
         raise HTTPException(status_code=401, detail="Invalid token")
     try:
         claims = json.loads(_unb64(payload))
-        result = TokenClaims(int(claims["sub"]), str(claims["jti"]), int(claims["exp"]))
+        result = TokenClaims(int(claims["sub"]), str(claims["jti"]), int(claims["exp"]), int(claims.get("ver", 0)))
     except (ValueError, KeyError, TypeError):
         raise HTTPException(status_code=401, detail="Malformed token")
     if result.expires_at < time.time():
@@ -118,11 +125,28 @@ def current_claims(
     return claims
 
 
-def current_user(
+def session_user(
     claims: TokenClaims = Depends(current_claims),
     session: Session = Depends(get_session),
 ) -> User:
+    """The logged-in account, also while it still has to replace a one-time
+    password - only for the routes that do exactly that."""
     user = session.get(User, claims.user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="Unknown user")
+    # a password change, reset or disabling raised the version: old sessions end
+    if user.disabled or claims.version != user.token_version:
+        raise HTTPException(status_code=401, detail="Session ended")
+    return user
+
+
+def current_user(user: User = Depends(session_user)) -> User:
+    if user.must_change_password:
+        raise HTTPException(status_code=403, detail="password_change_required")
+    return user
+
+
+def admin_user(user: User = Depends(current_user)) -> User:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only household admins may do this")
     return user

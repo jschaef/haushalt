@@ -7,11 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useI18n } from "@/lib/i18n/provider";
-
-// only same-site paths after login (no open redirect)
-function safeNext(value: string | null): string {
-  return value && value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/\\") ? value : "/dashboard";
-}
+import { errorFrom } from "@/lib/api";
+import { MIN_LENGTH, isPasswordProblem, problemMessage } from "@/lib/password";
+import { safeNext } from "@/lib/safe-next";
 
 export function LoginForm() {
   const { t, locale, setLocale } = useI18n();
@@ -38,15 +36,20 @@ export function LoginForm() {
       body: JSON.stringify(Object.fromEntries(form)),
     }).catch(() => null);
     if (response?.ok) {
-      window.location.href = safeNext(params.get("next"));
+      const body = await response.json().catch(() => ({}));
+      const next = safeNext(params.get("next"));
+      // a one-time password has to be replaced first
+      window.location.href = body.must_change_password ? `/password?next=${encodeURIComponent(next)}` : next;
       return;
     }
     setBusy(false);
-    if (response?.status === 429) setError(t("auth.tooMany"));
-    else {
-      const body = await response?.json().catch(() => ({}));
-      setError(signup && body?.detail ? body.detail : t("auth.failed"));
-    }
+    if (!response) return setError(t("auth.failed"));
+    if (response.status === 429) return setError(t("auth.tooMany"));
+    const error = errorFrom(response.status, await response.json().catch(() => ({})), response.statusText);
+    if (error.message === "account_disabled") return setError(t("auth.disabled"));
+    const reasons = error.reasons.filter(isPasswordProblem);
+    if (reasons.length) return setError(reasons.map((r) => t(problemMessage(r))).join(" "));
+    setError(signup ? error.message : t("auth.failed"));
   }
 
   return (
@@ -84,10 +87,16 @@ export function LoginForm() {
           name="password"
           type="password"
           autoComplete={signup ? "new-password" : "current-password"}
-          minLength={signup ? 8 : undefined}
+          minLength={signup ? MIN_LENGTH : undefined}
+          aria-describedby={signup ? "password-rules" : undefined}
           required
           className="h-10"
         />
+        {signup && (
+          <p id="password-rules" className="text-xs text-muted-foreground">
+            {t("password.rules")}
+          </p>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">

@@ -13,7 +13,18 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from . import banking_api, config, receipts, smartmeter, smartmeter_api, stats, utilities_api
-from .auth import TokenClaims, create_token, current_claims, current_user, hash_password, revoke, verify_password
+from .auth import (
+    TokenClaims,
+    admin_user,
+    create_token,
+    current_claims,
+    current_user,
+    hash_password,
+    revoke,
+    session_user,
+    verify_password,
+)
+from .passwords import MAX_LENGTH, one_time_password, problems
 from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, SessionLocal, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
@@ -71,10 +82,21 @@ class Credentials(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
+USERNAME = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
+
+
 class NewUser(BaseModel):
-    username: str = Field(min_length=3, max_length=64, pattern=r"^[A-Za-z0-9._-]+$")
-    password: str = Field(min_length=8, max_length=256)
+    username: str = USERNAME
+    password: str = Field(min_length=1, max_length=256)
     display_name: str = Field(default="", max_length=128)
+
+
+class NewMember(BaseModel):
+    """Added by an admin; the member gets a one-time password."""
+
+    username: str = USERNAME
+    display_name: str = Field(default="", max_length=128)
+    is_admin: bool = False
 
 
 class UserOut(BaseModel):
@@ -82,12 +104,30 @@ class UserOut(BaseModel):
     username: str
     display_name: str
     locale: str
+    is_admin: bool
+    disabled: bool
+    must_change_password: bool
 
 
 class UserPatch(BaseModel):
     display_name: str | None = Field(default=None, max_length=128)
     locale: str | None = None
-    password: str | None = Field(default=None, min_length=8, max_length=256)
+
+
+class MemberPatch(BaseModel):
+    display_name: str | None = Field(default=None, max_length=128)
+    is_admin: bool | None = None
+    disabled: bool | None = None
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=1, max_length=256)
+
+
+class OneTimePassword(BaseModel):
+    user: "UserOut"
+    one_time_password: str
 
 
 class CategoryIn(BaseModel):
@@ -202,7 +242,30 @@ def get_receipt(session: Session, receipt_id: int) -> Receipt:
 
 
 def user_out(user: User) -> UserOut:
-    return UserOut(id=user.id, username=user.username, display_name=user.display_name, locale=user.locale)
+    return UserOut(
+        id=user.id,
+        username=user.username,
+        display_name=user.display_name,
+        locale=user.locale,
+        is_admin=user.is_admin,
+        disabled=user.disabled,
+        must_change_password=user.must_change_password,
+    )
+
+
+def check_password(password: str, username: str, display_name: str = "") -> None:
+    found = problems(password, username=username, display_name=display_name)
+    if found:
+        # codes, the UI explains them in the user's language
+        raise HTTPException(status_code=422, detail={"code": "weak_password", "reasons": found, "max_length": MAX_LENGTH})
+
+
+def token_out(user: User) -> dict:
+    return {**create_token(user), "must_change_password": user.must_change_password}
+
+
+def end_sessions(user: User) -> None:
+    user.token_version += 1
 
 
 def recurring_out(cost: RecurringCost) -> RecurringOut:
@@ -261,7 +324,9 @@ def login(body: Credentials, request: Request, session: Session = Depends(get_se
         login_limiter.failure(key)
         raise HTTPException(status_code=401, detail="Invalid username or password")
     login_limiter.reset(key)
-    return create_token(user.id)
+    if user.disabled:
+        raise HTTPException(status_code=403, detail="account_disabled")
+    return token_out(user)
 
 
 @app.post(f"{PREFIX}/signup", status_code=201)
@@ -270,17 +335,23 @@ def signup(body: NewUser, session: Session = Depends(get_session)):
     users = session.scalar(select(func.count(User.id))) or 0
     if users and not config.ALLOW_SIGNUP:
         raise HTTPException(status_code=403, detail="Signup is closed, ask a household member")
-    user = _create_user(session, body)
-    return create_token(user.id)
+    check_password(body.password, body.username, body.display_name)
+    # the first account runs the household
+    user = _create_user(session, body.username, body.display_name, body.password, is_admin=users == 0)
+    return token_out(user)
 
 
-def _create_user(session: Session, body: NewUser) -> User:
-    if session.scalar(select(User).where(User.username == body.username)):
+def _create_user(
+    session: Session, username: str, display_name: str, password: str, *, is_admin: bool = False, must_change: bool = False
+) -> User:
+    if session.scalar(select(User).where(User.username == username)):
         raise HTTPException(status_code=409, detail="Username already taken")
     user = User(
-        username=body.username,
-        display_name=body.display_name or body.username,
-        password_hash=hash_password(body.password),
+        username=username,
+        display_name=display_name or username,
+        password_hash=hash_password(password),
+        is_admin=is_admin,
+        must_change_password=must_change,
     )
     session.add(user)
     session.commit()
@@ -296,8 +367,30 @@ def logout(claims: TokenClaims = Depends(current_claims), session: Session = Dep
 
 
 @app.get(f"{PREFIX}/me", response_model=UserOut)
-def me(user: User = Depends(current_user)):
+def me(user: User = Depends(session_user)):
     return user_out(user)
+
+
+@app.post(f"{PREFIX}/me/password")
+def change_password(body: PasswordChange, user: User = Depends(session_user), session: Session = Depends(get_session)):
+    """Also the way out of a one-time password. Ends all other sessions and
+    returns a new token for this one."""
+    user = session.merge(user)
+    key = f"password|{user.id}"
+    if login_limiter.blocked(key):
+        raise HTTPException(status_code=429, detail="Too many failed attempts, try again later")
+    if not verify_password(body.current_password, user.password_hash):
+        login_limiter.failure(key)
+        raise HTTPException(status_code=403, detail="wrong_current_password")
+    login_limiter.reset(key)
+    if body.new_password == body.current_password:
+        raise HTTPException(status_code=422, detail={"code": "weak_password", "reasons": ["unchanged"], "max_length": MAX_LENGTH})
+    check_password(body.new_password, user.username, user.display_name)
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_password = False
+    end_sessions(user)
+    session.commit()
+    return token_out(user)
 
 
 @app.patch(f"{PREFIX}/me", response_model=UserOut)
@@ -309,8 +402,6 @@ def update_me(body: UserPatch, user: User = Depends(current_user), session: Sess
         if body.locale not in LOCALES:
             raise HTTPException(status_code=422, detail="Unsupported locale")
         user.locale = body.locale
-    if body.password is not None:
-        user.password_hash = hash_password(body.password)
     session.commit()
     return user_out(user)
 
@@ -320,9 +411,50 @@ def list_users(_user: User = Depends(current_user), session: Session = Depends(g
     return [user_out(u) for u in session.scalars(select(User).order_by(User.username))]
 
 
-@app.post(f"{PREFIX}/users", response_model=UserOut, status_code=201)
-def add_member(body: NewUser, _user: User = Depends(current_user), session: Session = Depends(get_session)):
-    return user_out(_create_user(session, body))
+@app.post(f"{PREFIX}/users", response_model=OneTimePassword, status_code=201)
+def add_member(body: NewMember, _admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    """The admin passes the one-time password on; the member replaces it at
+    the first login, so nobody but the member knows the final password."""
+    password = one_time_password()
+    user = _create_user(session, body.username, body.display_name, password, is_admin=body.is_admin, must_change=True)
+    return OneTimePassword(user=user_out(user), one_time_password=password)
+
+
+def _member(session: Session, user_id: int) -> User:
+    user = session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="Unknown member")
+    return user
+
+
+@app.post(f"{PREFIX}/users/{{user_id}}/reset-password", response_model=OneTimePassword)
+def reset_password(user_id: int, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    if user_id == admin.id:
+        raise HTTPException(status_code=409, detail="Change your own password in your profile")
+    user = _member(session, user_id)
+    password = one_time_password()
+    user.password_hash = hash_password(password)
+    user.must_change_password = True
+    end_sessions(user)
+    session.commit()
+    return OneTimePassword(user=user_out(user), one_time_password=password)
+
+
+@app.patch(f"{PREFIX}/users/{{user_id}}", response_model=UserOut)
+def update_member(user_id: int, body: MemberPatch, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    user = _member(session, user_id)
+    if user.id == admin.id and (body.is_admin is False or body.disabled):
+        # the household must not lock itself out
+        raise HTTPException(status_code=409, detail="You cannot remove your own admin role or disable yourself")
+    if body.display_name is not None:
+        user.display_name = body.display_name or user.username
+    if body.is_admin is not None:
+        user.is_admin = body.is_admin
+    if body.disabled is not None and body.disabled != user.disabled:
+        user.disabled = body.disabled
+        end_sessions(user)
+    session.commit()
+    return user_out(user)
 
 
 # --- categories and stores ---------------------------------------------------

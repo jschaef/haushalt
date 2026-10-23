@@ -8,7 +8,7 @@ import { login } from "./helpers";
 
 test.use({ locale: "de-DE" });
 
-const PAGES = ["/dashboard", "/receipts", "/fixed", "/utilities", "/bank", "/settings"];
+const PAGES = ["/dashboard", "/receipts", "/fixed", "/utilities", "/bank", "/settings", "/password"];
 
 async function violations(page: Page) {
   const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
@@ -57,6 +57,8 @@ test("high-contrast mode: toggle, larger text, no transparency, persists", async
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
   }
+  // back to a page with the header (the /password page has none)
+  await page.goto("/settings");
   await page.reload();
   await expect(html).toHaveClass(themeClass("contrast"));
   await page.getByTestId("contrast-toggle").filter({ visible: true }).click();
@@ -83,6 +85,8 @@ test("light low-vision mode: from the light theme, black on white, sun/moon keep
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
   }
+  // back to a page with the header (the /password page has none)
+  await page.goto("/settings");
   // light/dark switch stays in the low-vision mode
   const lightness = page.getByRole("button", { name: "Hell/Dunkel umschalten" }).filter({ visible: true });
   await lightness.click();

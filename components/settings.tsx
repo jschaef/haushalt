@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useTheme } from "next-themes";
-import { Plus } from "lucide-react";
+import { Check, Copy, KeyRound, Plus, ShieldCheck, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Tile } from "@/components/bento";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Category } from "@/lib/api";
+import { PasswordForm } from "@/components/password-form";
+import { api, type Category, type OneTimePassword, type User } from "@/lib/api";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
@@ -85,7 +86,6 @@ function ProfileTile() {
   const { t } = useI18n();
   const me = useData(() => api.me(), "me");
   const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const loaded = me.data;
 
@@ -94,16 +94,12 @@ function ProfileTile() {
     if (loaded) setName(loaded.display_name);
   }, [loaded]);
 
-  const passwordInvalid = password !== "" && password.length < 8;
-
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (passwordInvalid || !name.trim()) return;
+    if (!name.trim()) return;
     setBusy(true);
     try {
-      const saved = await api.updateMe({ display_name: name.trim(), ...(password ? { password } : {}) });
-      me.setData(saved);
-      setPassword("");
+      me.setData(await api.updateMe({ display_name: name.trim() }));
       toast.success(t("receipt.saved"));
     } catch (error) {
       toast.error((error as Error).message);
@@ -122,19 +118,7 @@ function ProfileTile() {
             <Label htmlFor="profile-name">{t("auth.displayName")}</Label>
             <Input id="profile-name" value={name} onChange={(e) => setName(e.target.value)} required />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="profile-password">{t("settings.newPassword")}</Label>
-            <Input
-              id="profile-password"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              value={password}
-              aria-invalid={passwordInvalid}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <Button type="submit" disabled={busy || passwordInvalid || !name.trim()}>
+          <Button type="submit" disabled={busy || !name.trim()}>
             {t("common.save")}
           </Button>
         </form>
@@ -143,25 +127,131 @@ function ProfileTile() {
   );
 }
 
+function PasswordTile() {
+  const { t } = useI18n();
+  return (
+    <Tile index={3} title={t("password.title")}>
+      <PasswordForm />
+    </Tile>
+  );
+}
+
+// Shown once after adding a member or resetting a password.
+function OneTimePasswordPanel({ value, onDone }: { value: OneTimePassword; onDone: () => void }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  return (
+    <div role="status" className="space-y-2 rounded-xl border-2 border-primary p-3" data-testid="one-time-password">
+      <p className="text-sm font-medium">{t("members.oneTimeTitle", { name: value.user.display_name })}</p>
+      <p className="break-all font-mono text-lg tracking-wide select-all">{value.one_time_password}</p>
+      <p className="text-xs text-muted-foreground">{t("members.oneTimeHint")}</p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(value.one_time_password)
+              .then(() => setCopied(true))
+              .catch(() => undefined)
+          }
+        >
+          {copied ? <Check /> : <Copy />} {copied ? t("members.copied") : t("members.copy")}
+        </Button>
+        <Button type="button" size="sm" onClick={onDone}>
+          {t("members.done")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function MemberRow({ user, me, onChanged, onOneTime }: { user: User; me: User; onChanged: () => void; onOneTime: (v: OneTimePassword) => void }) {
+  const { t } = useI18n();
+  const [busy, setBusy] = useState(false);
+  const self = user.id === me.id;
+
+  async function run(action: () => Promise<unknown>, question?: string) {
+    if (question && !window.confirm(question)) return;
+    setBusy(true);
+    try {
+      await action();
+      onChanged();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="space-y-2 rounded-xl bg-muted/40 px-3 py-2 text-sm" data-testid="member">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="font-medium">{user.display_name}</span>
+        <span className="text-xs text-muted-foreground">@{user.username}</span>
+        {self && <Badge variant="outline">{t("members.you")}</Badge>}
+        {user.is_admin && <Badge>{t("members.admin")}</Badge>}
+        {user.disabled && <Badge variant="destructive">{t("members.disabled")}</Badge>}
+        {user.must_change_password && <Badge variant="secondary">{t("members.mustChange")}</Badge>}
+      </div>
+      {me.is_admin && !self && (
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t("members.actions", { name: user.display_name })}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                async () => onOneTime(await api.resetPassword(user.id)),
+                t("members.resetConfirm", { name: user.display_name }),
+              )
+            }
+          >
+            <KeyRound /> {t("members.reset")}
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void run(() => api.updateUser(user.id, { is_admin: !user.is_admin }))}>
+            <ShieldCheck /> {user.is_admin ? t("members.removeAdmin") : t("members.makeAdmin")}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() =>
+              void run(
+                () => api.updateUser(user.id, { disabled: !user.disabled }),
+                user.disabled ? undefined : t("members.disableConfirm", { name: user.display_name }),
+              )
+            }
+          >
+            {user.disabled ? <UserCheck /> : <UserX />} {user.disabled ? t("members.enable") : t("members.disable")}
+          </Button>
+        </div>
+      )}
+    </li>
+  );
+}
+
 function MembersTile() {
   const { t } = useI18n();
   const users = useData(() => api.users(), "users");
+  const me = useData(() => api.me(), "me");
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
+  const [asAdmin, setAsAdmin] = useState(false);
   const [busy, setBusy] = useState(false);
-  const valid = username.trim() !== "" && password.length >= 8;
+  const [oneTime, setOneTime] = useState<OneTimePassword | null>(null);
+  const valid = username.trim().length >= 3;
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!valid) return;
     setBusy(true);
     try {
-      await api.addUser({ username: username.trim(), password, display_name: displayName.trim() || undefined });
-      toast.success(t("settings.addMember"));
+      setOneTime(await api.addUser({ username: username.trim(), display_name: displayName.trim() || undefined, is_admin: asAdmin }));
       setUsername("");
       setDisplayName("");
-      setPassword("");
+      setAsAdmin(false);
       await users.reload();
     } catch (error) {
       toast.error((error as Error).message);
@@ -171,47 +261,41 @@ function MembersTile() {
   }
 
   return (
-    <Tile index={3} title={t("settings.members")}>
-      {!users.data ? (
+    <Tile index={4} title={t("settings.members")}>
+      {!users.data || !me.data ? (
         <Skeleton className="h-16 rounded-xl" />
       ) : (
         <ul className="space-y-1.5" data-testid="members">
           {users.data.map((user) => (
-            <li key={user.id} className="flex items-baseline gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm">
-              <span className="font-medium">{user.display_name}</span>
-              <span className="text-xs text-muted-foreground">@{user.username}</span>
-            </li>
+            <MemberRow key={user.id} user={user} me={me.data!} onChanged={() => void users.reload()} onOneTime={setOneTime} />
           ))}
         </ul>
       )}
-      <form onSubmit={submit} className="space-y-3 border-t pt-3">
-        <h3 className="text-sm font-medium">{t("settings.addMember")}</h3>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="member-username">{t("auth.username")}</Label>
-            <Input id="member-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+      {oneTime && <OneTimePasswordPanel value={oneTime} onDone={() => setOneTime(null)} />}
+      {me.data && !me.data.is_admin ? (
+        <p className="border-t pt-3 text-sm text-muted-foreground">{t("members.adminOnly")}</p>
+      ) : (
+        <form onSubmit={submit} className="space-y-3 border-t pt-3">
+          <h3 className="text-sm font-medium">{t("settings.addMember")}</h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="member-username">{t("auth.username")}</Label>
+              <Input id="member-username" autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="member-name">{t("auth.displayName")}</Label>
+              <Input id="member-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="member-name">{t("auth.displayName")}</Label>
-            <Input id="member-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="member-password">{t("auth.password")}</Label>
-          <Input
-            id="member-password"
-            type="password"
-            autoComplete="new-password"
-            minLength={8}
-            value={password}
-            aria-invalid={password !== "" && password.length < 8}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        <Button type="submit" disabled={busy || !valid}>
-          <Plus /> {t("common.add")}
-        </Button>
-      </form>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={asAdmin} onChange={(e) => setAsAdmin(e.target.checked)} className="size-4 accent-primary" />
+            {t("members.asAdmin")}
+          </label>
+          <Button type="submit" disabled={busy || !valid}>
+            <Plus /> {t("common.add")}
+          </Button>
+        </form>
+      )}
     </Tile>
   );
 }
@@ -376,7 +460,7 @@ function CategoriesTile() {
   }
 
   return (
-    <Tile index={4} title={t("settings.categories")} className="md:col-span-2">
+    <Tile index={5} title={t("settings.categories")} className="md:col-span-2">
       {!categories.data ? (
         <Skeleton className="h-32 rounded-xl" />
       ) : (
@@ -408,6 +492,7 @@ export function Settings() {
         <LanguageTile />
         <ThemeTile />
         <ProfileTile />
+        <PasswordTile />
         <MembersTile />
         <CategoriesTile />
       </div>
