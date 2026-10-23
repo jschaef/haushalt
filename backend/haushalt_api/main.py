@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking_api, config, receipts, smartmeter, smartmeter_api, stats, utilities_api
+from . import banking_api, config, receipts, smartmeter, smartmeter_api, stats, tags_api, utilities_api
 from .auth import (
     TokenClaims,
     admin_user,
@@ -28,6 +28,7 @@ from .passwords import MAX_LENGTH, one_time_password, problems
 from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, SessionLocal, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
+from .tags_api import resolve_tags
 
 logger = logging.getLogger("haushalt_api")
 
@@ -70,6 +71,7 @@ app.include_router(smartmeter_api.router)
 app.include_router(smartmeter_api.ingest_router)
 app.include_router(utilities_api.router)
 app.include_router(banking_api.router)
+app.include_router(tags_api.router)
 PREFIX = "/api/v1"
 LOCALES = ("de", "en")
 
@@ -192,6 +194,8 @@ class RecurringIn(BaseModel):
     start_on: date
     end_on: date | None = None
     meter_id: int | None = None
+    # None keeps the tags (an update that does not know them must not drop them)
+    tag_ids: list[int] | None = Field(default=None, max_length=20)
 
 
 class RecurringOut(RecurringIn):
@@ -278,6 +282,7 @@ def recurring_out(cost: RecurringCost) -> RecurringOut:
         start_on=cost.start_on,
         end_on=cost.end_on,
         meter_id=cost.meter_id,
+        tag_ids=[tag.id for tag in cost.tags],
         daily_cents=round(stats.recurring_daily_cents(cost), 2),
     )
 
@@ -625,7 +630,7 @@ def list_recurring(_user: User = Depends(current_user), session: Session = Depen
 def create_recurring(body: RecurringIn, _user: User = Depends(current_user), session: Session = Depends(get_session)):
     check_category(session, body.category_id)
     check_meter(session, body.meter_id)
-    cost = RecurringCost(**body.model_dump())
+    cost = RecurringCost(**body.model_dump(exclude={"tag_ids"}), tags=resolve_tags(session, body.tag_ids or []))
     session.add(cost)
     session.commit()
     return recurring_out(cost)
@@ -640,8 +645,10 @@ def update_recurring(
         raise HTTPException(status_code=404, detail="Recurring cost not found")
     check_category(session, body.category_id)
     check_meter(session, body.meter_id)
-    for field, value in body.model_dump().items():
+    for field, value in body.model_dump(exclude={"tag_ids"}).items():
         setattr(cost, field, value)
+    if body.tag_ids is not None:
+        cost.tags = resolve_tags(session, body.tag_ids)
     session.commit()
     return recurring_out(cost)
 

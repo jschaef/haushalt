@@ -321,6 +321,8 @@ def apply_bill(bill_id: int, session: Session = Depends(get_session)):
                 (RecurringCost.end_on.is_(None)) | (RecurringCost.end_on >= today),
             )
         ).all()
+        # the new instalment keeps the tags of the one it replaces
+        tags = list(dict.fromkeys(tag for cost in running for tag in cost.tags))
         for cost in running:
             if cost.start_on < today:
                 cost.end_on = today - timedelta(days=1)
@@ -334,6 +336,7 @@ def apply_bill(bill_id: int, session: Session = Depends(get_session)):
                 interval_months=1,
                 start_on=today,
                 meter_id=meter.id,
+                tags=tags,
             )
         )
         applied["instalment"] = True

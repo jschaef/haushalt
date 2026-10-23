@@ -165,3 +165,20 @@ test("focus is not hidden behind the sticky header or the tab bar", async ({ pag
     }
   }
 });
+
+test("status badges keep their contrast in the light theme", async ({ page }) => {
+  // the "to review" badge (chart-3 text on a chart-3 tint) was below 4.5:1;
+  // it only showed when a booking happened to wait for review during the run
+  await login(page);
+  await setTheme(page, "light");
+  await page.goto("/bank");
+  await page.getByTestId("statement-input").setInputFiles({
+    name: "a.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from(`Buchungstag;Empfänger;Verwendungszweck;Betrag\n01.01.2026;Badge-${Date.now()};Pruefen;-1,00\n`, "utf-8"),
+  });
+  await expect(page.getByTestId("booking-row").first()).toBeVisible();
+  // measure the toast once its slide-in is over (axe reads colours mid-animation)
+  await page.waitForTimeout(2000);
+  expect(await violations(page)).toEqual([]);
+});

@@ -23,6 +23,7 @@ import {
 import { centsToInput, money, parseMoney, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
+import { byName } from "@/lib/sort";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
 import { cn } from "@/lib/utils";
 
@@ -121,10 +122,7 @@ function MeterForm({
 }) {
   const { t, locale } = useI18n();
   const uid = useId();
-  const sorted = useMemo(
-    () => [...categories.filter((c) => c.kind === "fixed"), ...categories.filter((c) => c.kind !== "fixed")],
-    [categories],
-  );
+  const sorted = useMemo(() => byName(categories, (c) => (locale === "de" ? c.name_de : c.name_en), locale), [categories, locale]);
   const categoryFor = (kind: UtilityKind) => categories.find((c) => c.key === kind)?.id ?? null;
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<UtilityKind>(initial?.kind ?? "electricity");
@@ -240,7 +238,7 @@ function PhotoConfirm({
   onSaved: () => Promise<void>;
   onCancel: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const uid = useId();
   const [busy, setBusy] = useState(false);
   const value = parseDecimal(proposal.value);
@@ -279,7 +277,7 @@ function PhotoConfirm({
             className={SELECT_CLASS}
           >
             <option value="">{t("util.pickMeter")}</option>
-            {meters.map((m) => (
+            {byName(meters, (m) => m.name, locale).map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
               </option>
@@ -1019,7 +1017,7 @@ function BillRow({
           <Label htmlFor={`${uid}-meter`}>{t("util.assign")}</Label>
           <select id={`${uid}-meter`} value={bill.meter_id ?? ""} disabled={busy} onChange={(e) => assign(e.target.value)} className={SELECT_CLASS}>
             <option value="">{t("util.unassigned")}</option>
-            {meters.map((m) => (
+            {byName(meters, (m) => m.name, locale).map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
               </option>

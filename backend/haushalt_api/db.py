@@ -10,11 +10,13 @@ from typing import Iterator
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     Date,
     DateTime,
     ForeignKey,
     Integer,
     String,
+    Table,
     UniqueConstraint,
     create_engine,
     inspect,
@@ -139,6 +141,39 @@ class CategoryRule(Base):
     hits: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class Tag(Base):
+    """For whom or what for (a family member, a holiday), next to the one
+    category of an entry (the what). Sums per tag may overlap."""
+
+    __tablename__ = "tags"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    color: Mapped[str] = mapped_column(String(7), default="#64748b")
+
+
+recurring_cost_tags = Table(
+    "recurring_cost_tags",
+    Base.metadata,
+    Column("recurring_id", ForeignKey("recurring_costs.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
+bank_transaction_tags = Table(
+    "bank_transaction_tags",
+    Base.metadata,
+    Column("transaction_id", ForeignKey("bank_transactions.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
+class TagRule(Base):
+    """Learned tags of a bank counterparty (pattern as in CategoryRule)."""
+
+    __tablename__ = "tag_rules"
+    pattern: Mapped[str] = mapped_column(String(256), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
+
+
 class RecurringCost(Base):
     """A cost due every interval_months (1 = monthly instalment, 12 = yearly),
     spread evenly over its period in the statistics."""
@@ -153,6 +188,7 @@ class RecurringCost(Base):
     end_on: Mapped[date | None] = mapped_column(Date)
     # instalment for a utility meter: counts as "paid" in its settlement forecast
     meter_id: Mapped[int | None] = mapped_column(ForeignKey("meters.id", ondelete="SET NULL"))
+    tags: Mapped[list[Tag]] = relationship(secondary=recurring_cost_tags, lazy="selectin", order_by=Tag.name)
 
 
 class Meter(Base):
@@ -202,6 +238,19 @@ class Tariff(Base):
     base_fee_monthly_cents: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class BankAccount(Base):
+    """One of the household's own accounts. Bookings of a statement belong to
+    it; transfers to or from another own account count nowhere."""
+
+    __tablename__ = "bank_accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    bank: Mapped[str] = mapped_column(String(64), default="")
+    # normalized (no spaces, upper case); empty when the statements never say
+    iban: Mapped[str] = mapped_column(String(34), default="", index=True)
+    color: Mapped[str] = mapped_column(String(7), default="#64748b")
+
+
 class BankTransaction(Base):
     """One booking from a bank statement. amount_cents < 0 is money going out.
 
@@ -223,10 +272,13 @@ class BankTransaction(Base):
     purpose: Mapped[str] = mapped_column(String(512), default="")
     fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
     status: Mapped[str] = mapped_column(String(16), default="review", index=True)
+    account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     receipt_id: Mapped[int | None] = mapped_column(ForeignKey("receipts.id", ondelete="SET NULL"))
     recurring_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_costs.id", ondelete="SET NULL"))
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # only for status counted: the booking's own tags
+    tags: Mapped[list[Tag]] = relationship(secondary=bank_transaction_tags, lazy="selectin", order_by=Tag.name)
 
 
 class UtilityBill(Base):
@@ -317,6 +369,7 @@ _LATER_COLUMNS = {
         "token_version": "INTEGER NOT NULL DEFAULT 0",
     },
     "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
+    "bank_transactions": {"account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL"},
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {
         "ingest_token_hash": "VARCHAR(64) NOT NULL DEFAULT ''",

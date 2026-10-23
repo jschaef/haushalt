@@ -9,7 +9,9 @@ Matching rules for money going out, in this order:
    candidate at all and the store is unknown; otherwise left for review.
 2. fixed: exactly one recurring cost running on that day with this amount.
 3. counted: a category learned from earlier decisions for this counterparty.
-Everything else waits for review. Money coming in is ignored by default.
+Everything else waits for review. Money coming in is ignored by default, and
+so is every transfer to or from another of the household's own accounts
+(counterparty IBAN = an account's IBAN): otherwise it would count twice.
 """
 
 import csv
@@ -21,10 +23,10 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from defusedxml import ElementTree
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankTransaction, CategoryRule, Receipt, RecurringCost
+from .db import BankAccount, BankTransaction, CategoryRule, Receipt, RecurringCost, Tag, TagRule
 from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
@@ -34,6 +36,10 @@ RULE_PREFIX = "bank:"
 
 class StatementError(ValueError):
     pass
+
+
+class AccountMismatch(StatementError):
+    """The statement names another IBAN than the account chosen for it."""
 
 
 @dataclass
@@ -191,19 +197,23 @@ def _map_header(cells: list[str]) -> dict[str, int]:
     return mapping
 
 
-def parse_csv(data: bytes) -> list[Booking]:
-    """CSV exports differ per bank: preamble lines, ';' or ',', German or
-    English headers, one signed amount or debit/credit columns."""
+def _csv_header(data: bytes) -> tuple[list[str], str, int | None, dict[str, int]]:
+    """Lines, delimiter, index and column mapping of the table header."""
     text = _decode(data)
     lines = text.splitlines()
     delimiter = ";" if text.count(";") >= text.count(",") else ","
-    header_index, mapping = None, {}
     for index, line in enumerate(lines[:40]):
         cells = next(csv.reader([line], delimiter=delimiter), [])
         candidate = _map_header(cells) if len(cells) >= 3 else {}
         if "date" in candidate and ("amount" in candidate or "debit" in candidate):
-            header_index, mapping = index, candidate
-            break
+            return lines, delimiter, index, candidate
+    return lines, delimiter, None, {}
+
+
+def parse_csv(data: bytes) -> list[Booking]:
+    """CSV exports differ per bank: preamble lines, ';' or ',', German or
+    English headers, one signed amount or debit/credit columns."""
+    lines, delimiter, header_index, mapping = _csv_header(data)
     if header_index is None:
         # name what was seen, so an unknown bank format can be added quickly
         first = next((line for line in lines if line.strip()), "")[:200]
@@ -233,11 +243,80 @@ def parse_csv(data: bytes) -> list[Booking]:
     return bookings
 
 
-def parse_statement(data: bytes) -> list[Booking]:
+def _is_xml(data: bytes) -> bool:
     head = data[:200].lstrip(b"\xef\xbb\xbf \r\n\t").lower()
-    if head.startswith(b"<?xml") or head.startswith(b"<document"):
-        return parse_camt(data)
-    return parse_csv(data)
+    return head.startswith(b"<?xml") or head.startswith(b"<document")
+
+
+def parse_statement(data: bytes) -> list[Booking]:
+    return parse_camt(data) if _is_xml(data) else parse_csv(data)
+
+
+# --- own accounts ------------------------------------------------------------
+
+_IBAN_RE = re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,30}\b")
+
+
+def normalize_iban(text: str) -> str:
+    return re.sub(r"\s", "", text or "").upper()
+
+
+def valid_iban(iban: str) -> bool:
+    """ISO 13616 check digits (mod 97), so a random number is no IBAN."""
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", iban):
+        return False
+    digits = "".join(str(int(c, 36)) for c in iban[4:] + iban[:4])
+    return int(digits) % 97 == 1
+
+
+def statement_iban(data: bytes) -> str:
+    """The own account a statement belongs to, "" if it does not say: the
+    Acct of a CAMT statement, or an IBAN in the lines above a CSV table
+    (Postbank, Sparkasse and others put the account there)."""
+    if _is_xml(data):
+        try:
+            root = ElementTree.fromstring(data)
+        except Exception:  # parse_camt reports it
+            return ""
+        for element in root.iter():
+            if _local(element.tag) in ("Stmt", "Rpt", "Ntfctn"):
+                iban = normalize_iban(_text(element, "Acct", "Id", "IBAN"))
+                if valid_iban(iban):
+                    return iban
+        return ""
+    lines, _, header_index, _ = _csv_header(data)
+    for line in lines[: header_index or 0]:
+        for candidate in _IBAN_RE.findall(line.upper()):
+            iban = normalize_iban(candidate)
+            if valid_iban(iban):
+                return iban
+    return ""
+
+
+def own_ibans(session: Session) -> set[str]:
+    return {iban for iban in session.scalars(select(BankAccount.iban)) if iban}
+
+
+def statement_account(session: Session, iban: str, account_id: int | None) -> BankAccount | None:
+    """The chosen account (it learns the IBAN if it had none), else the one
+    with the statement's IBAN - created when it is new - else none."""
+    if account_id is not None:
+        account = session.get(BankAccount, account_id)
+        if account is None:
+            raise StatementError("Unknown account")
+        if iban and account.iban and account.iban != iban:
+            raise AccountMismatch(f"The statement belongs to the account {iban}, not to {account.name}")
+        if iban and not account.iban:
+            account.iban = iban
+        return account
+    if not iban:
+        return None
+    account = session.scalar(select(BankAccount).where(BankAccount.iban == iban))
+    if account is None:
+        account = BankAccount(name=f"Konto …{iban[-4:]}", iban=iban)
+        session.add(account)
+        session.flush()
+    return account
 
 
 # --- import and matching ---------------------------------------------------------
@@ -279,8 +358,11 @@ def store_in_text(receipt: Receipt, tx: BankTransaction) -> bool:
     return bool(store) and all(f" {word}" in haystack for word in store.split())
 
 
-def match(session: Session, tx: BankTransaction) -> None:
+def match(session: Session, tx: BankTransaction, own: set[str] | None = None) -> None:
     """Sets status and link of an undecided booking (see module docstring)."""
+    if is_transfer(tx, own_ibans(session) if own is None else own):
+        tx.status = "ignored"
+        return
     if tx.amount_cents >= 0:
         tx.status = "ignored"
         return
@@ -300,38 +382,55 @@ def match(session: Session, tx: BankTransaction) -> None:
     if len(recurring) == 1:
         tx.status, tx.recurring_id = "fixed", recurring[0].id
         return
-    # column limit (PostgreSQL enforces it, SQLite does not)
-    pattern = (RULE_PREFIX + normalize(tx.counterparty))[:256]
+    pattern = counterparty_pattern(tx)
     rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern)) if tx.counterparty else None
     if rule is not None:
         rule.hits += 1
         tx.status, tx.category_id = "counted", rule.category_id
+        tx.tags = list(session.scalars(select(Tag).join(TagRule, TagRule.tag_id == Tag.id).where(TagRule.pattern == pattern)))
+
+
+def is_transfer(tx: BankTransaction, own: set[str]) -> bool:
+    """Money moved between two of the household's own accounts."""
+    return bool(tx.iban) and normalize_iban(tx.iban) in own
+
+
+def counterparty_pattern(tx: BankTransaction) -> str:
+    # column limit (PostgreSQL enforces it, SQLite does not)
+    return (RULE_PREFIX + normalize(tx.counterparty))[:256]
 
 
 def learn_counterparty(session: Session, tx: BankTransaction) -> None:
+    """Remembers category and tags of a counted booking for its counterparty."""
     if not tx.counterparty or tx.category_id is None:
         return
-    # column limit (PostgreSQL enforces it, SQLite does not)
-    pattern = (RULE_PREFIX + normalize(tx.counterparty))[:256]
+    pattern = counterparty_pattern(tx)
     rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern))
     if rule is None:
         session.add(CategoryRule(pattern=pattern, category_id=tx.category_id))
     else:
         rule.category_id = tx.category_id
+    # the latest decision wins, also for the tags
+    session.execute(delete(TagRule).where(TagRule.pattern == pattern))
+    session.add_all(TagRule(pattern=pattern, tag_id=tag.id) for tag in tx.tags)
 
 
-def import_statement(session: Session, data: bytes) -> dict:
+def import_statement(session: Session, data: bytes, account_id: int | None = None) -> dict:
     bookings = parse_statement(data)
+    account = statement_account(session, statement_iban(data), account_id)
+    own = own_ibans(session)
+    # fingerprints stay without the account, so statements imported before
+    # accounts existed are still recognised as duplicates
     prints = fingerprints(bookings)
     existing = set(session.scalars(select(BankTransaction.fingerprint).where(BankTransaction.fingerprint.in_(prints))))
     created = []
     for booking, fingerprint in zip(bookings, prints):
         if fingerprint in existing:
             continue
-        tx = BankTransaction(fingerprint=fingerprint, **booking.__dict__)
+        tx = BankTransaction(fingerprint=fingerprint, account_id=account.id if account else None, **booking.__dict__)
         session.add(tx)
         session.flush()
-        match(session, tx)
+        match(session, tx, own)
         created.append(tx)
     session.commit()
     counts = Counter(tx.status for tx in created)
@@ -340,14 +439,18 @@ def import_statement(session: Session, data: bytes) -> dict:
         "imported": len(created),
         "duplicates": len(bookings) - len(created),
         **{status: counts.get(status, 0) for status in ("receipt", "fixed", "counted", "review", "ignored")},
+        "transfers": sum(is_transfer(tx, own) for tx in created),
+        "account_id": account.id if account else None,
+        "account_name": account.name if account else None,
     }
 
 
 def rematch(session: Session) -> int:
     """Try again for bookings still in review, e.g. after new receipts."""
     changed = 0
+    own = own_ibans(session)
     for tx in session.scalars(select(BankTransaction).where(BankTransaction.status == "review")):
-        match(session, tx)
+        match(session, tx, own)
         changed += tx.status != "review"
     session.commit()
     return changed

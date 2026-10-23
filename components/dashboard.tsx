@@ -155,6 +155,12 @@ export function Dashboard() {
             <StoreList summary={s} fmt={fmt} />
           </Tile>
 
+          {s.by_tag.length > 0 && (
+            <Tile index={10} title={t("tags.dashTitle")} className="col-span-2" testId="tile-tags">
+              <TagSums summary={s} fmt={fmt} />
+            </Tile>
+          )}
+
 
           <Tile index={10} title={t("receipts.confirmed")} className="col-span-2" action={<MoreLink href="/receipts" />}>
             <ul className="divide-y divide-border/60 text-sm">
@@ -309,6 +315,25 @@ function CategoryBreakdown({ summary }: { summary: Summary }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// tags overlap, so no shares: each row is the full amount of its entries
+function TagSums({ summary, fmt }: { summary: Summary; fmt: (v: number) => string }) {
+  const { t } = useI18n();
+  return (
+    <div className="space-y-2">
+      <ul className="space-y-1.5 text-sm">
+        {summary.by_tag.map((tag) => (
+          <li key={tag.id} className="flex items-center gap-2">
+            <span className="size-2.5 shrink-0 rounded-full ring-1 ring-foreground/40" style={{ background: tag.color }} aria-hidden />
+            <span className="flex-1 truncate">{tag.name}</span>
+            <span className="tabular text-muted-foreground">{fmt(tag.cents)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">{t("tags.dashHint")}</p>
     </div>
   );
 }

@@ -53,6 +53,8 @@ export type Summary = {
   previous_total_cents: number;
   average: { total: Averages; variable: Averages; fixed: Averages };
   by_category: { key: string; name_de: string; name_en: string; color: string; kind: string; cents: number }[];
+  // tags overlap: no shares, every tag counts the full amount
+  by_tag: { id: number; name: string; color: string; cents: number }[];
   by_store: { name: string; cents: number; count: number }[];
   daily: { date: string; cents: number }[];
 };
@@ -66,8 +68,14 @@ export type Recurring = {
   start_on: string;
   end_on: string | null;
   meter_id: number | null;
+  tag_ids: number[];
   daily_cents: number;
 };
+
+export type Tag = { id: number; name: string; color: string };
+
+// without tag_ids an update keeps the tags
+export type RecurringBody = Omit<Recurring, "id" | "daily_cents" | "meter_id" | "tag_ids"> & { meter_id?: number | null; tag_ids?: number[] };
 
 export type UtilityKind = "electricity" | "gas" | "water" | "heat" | "other";
 
@@ -155,12 +163,25 @@ export type BankTransaction = {
   iban: string;
   purpose: string;
   status: BookingStatus;
+  account_id: number | null;
   receipt_id: number | null;
   recurring_id: number | null;
   category_id: number | null;
+  tag_ids: number[];
 };
 
-export type ImportResult = { read: number; imported: number; duplicates: number } & Record<BookingStatus, number>;
+export type ImportResult = {
+  read: number;
+  imported: number;
+  duplicates: number;
+  // bookings between two own accounts (ignored, they are no spending)
+  transfers: number;
+  account_id: number | null;
+  account_name: string | null;
+} & Record<BookingStatus, number>;
+
+export type BankAccount = { id: number; name: string; bank: string; iban: string; color: string; bookings: number };
+export type BankAccountInput = Pick<BankAccount, "name" | "bank" | "iban" | "color">;
 
 export type ReceiptCandidate = { id: number; store_name: string; purchased_on: string | null; total_cents: number; store_matches: boolean };
 
@@ -169,6 +190,7 @@ export type BookingDecision = {
   receipt_id?: number | null;
   recurring_id?: number | null;
   category_id?: number | null;
+  tag_ids?: number[];
 };
 
 export type User = {
@@ -247,6 +269,10 @@ export const api = {
   createCategory: (body: Omit<Category, "id">) => request<Category>("categories", json("POST", body)),
   updateCategory: (id: number, body: Omit<Category, "id">) => request<Category>(`categories/${id}`, json("PUT", body)),
   stores: () => request<Store[]>("stores"),
+  tags: () => request<Tag[]>("tags"),
+  createTag: (body: Omit<Tag, "id">) => request<Tag>("tags", json("POST", body)),
+  updateTag: (id: number, body: Omit<Tag, "id">) => request<Tag>(`tags/${id}`, json("PUT", body)),
+  deleteTag: (id: number) => request<void>(`tags/${id}`, { method: "DELETE" }),
   receipts: (status?: "draft" | "confirmed") => request<Receipt[]>(status ? `receipts?status=${status}` : "receipts"),
   receipt: (id: number) => request<Receipt>(`receipts/${id}`),
   upload: (files: File[]) => {
@@ -261,8 +287,8 @@ export const api = {
   deleteReceipt: (id: number) => request<void>(`receipts/${id}`, { method: "DELETE" }),
   fileUrl: (id: number) => `/api/v1/receipts/${id}/file`,
   recurring: () => request<Recurring[]>("recurring"),
-  createRecurring: (body: Omit<Recurring, "id" | "daily_cents" | "meter_id"> & { meter_id?: number | null }) => request<Recurring>("recurring", json("POST", body)),
-  updateRecurring: (id: number, body: Omit<Recurring, "id" | "daily_cents" | "meter_id"> & { meter_id?: number | null }) =>
+  createRecurring: (body: RecurringBody) => request<Recurring>("recurring", json("POST", body)),
+  updateRecurring: (id: number, body: RecurringBody) =>
     request<Recurring>(`recurring/${id}`, json("PUT", body)),
   deleteRecurring: (id: number) => request<void>(`recurring/${id}`, { method: "DELETE" }),
   summary: (range: Range) => request<Summary>(`stats/summary?range=${range}`),
@@ -299,13 +325,20 @@ export const api = {
   applyBill: (id: number) => request<{ tariff: boolean; instalment: boolean }>(`bills/${id}/apply`, { method: "POST" }),
   deleteBill: (id: number) => request<void>(`bills/${id}`, { method: "DELETE" }),
   billFileUrl: (id: number) => `/api/v1/bills/${id}/file`,
-  importStatement: (file: File) => {
+  // without accountId the API takes the account from the statement's IBAN
+  importStatement: (file: File, accountId?: number | null) => {
     const form = new FormData();
     form.append("file", file);
+    if (accountId) form.append("account_id", String(accountId));
     return request<ImportResult>("bank/import", { method: "POST", body: form });
   },
+  accounts: () => request<BankAccount[]>("bank/accounts"),
+  createAccount: (body: BankAccountInput) => request<BankAccount>("bank/accounts", json("POST", body)),
+  updateAccount: (id: number, body: BankAccountInput) => request<BankAccount>(`bank/accounts/${id}`, json("PUT", body)),
+  deleteAccount: (id: number) => request<void>(`bank/accounts/${id}`, { method: "DELETE" }),
+  // all bookings (the API returns the newest 500 without a limit)
   transactions: (status?: BookingStatus) =>
-    request<BankTransaction[]>(status ? `bank/transactions?status=${status}` : "bank/transactions"),
+    request<BankTransaction[]>(status ? `bank/transactions?status=${status}&limit=20000` : "bank/transactions?limit=20000"),
   candidates: (id: number) => request<ReceiptCandidate[]>(`bank/transactions/${id}/candidates`),
   decide: (id: number, decision: BookingDecision) => request<BankTransaction>(`bank/transactions/${id}`, json("PATCH", decision)),
   rematch: () => request<{ matched: number }>("bank/rematch", { method: "POST" }),

@@ -8,13 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Category, type Recurring } from "@/lib/api";
+import { TagChips, TagFilter, TagPicker } from "@/components/tags";
+import { api, type Category, type Recurring, type RecurringBody, type Tag } from "@/lib/api";
 import { centsToInput, money, parseMoney, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
+import { byName } from "@/lib/sort";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
 
-type Body = Omit<Recurring, "id" | "daily_cents">;
+type Body = RecurringBody;
 
 const INTERVALS: { months: number; label: MessageKey }[] = [
   { months: 1, label: "fixed.monthly" },
@@ -41,6 +43,8 @@ function intervalLabel(months: number, t: (key: MessageKey) => string): string {
 function CostForm({
   initial,
   categories,
+  tags,
+  onTagCreated,
   locale,
   submitLabel,
   onSubmit,
@@ -48,6 +52,8 @@ function CostForm({
 }: {
   initial?: Recurring;
   categories: Category[];
+  tags: Tag[];
+  onTagCreated: (tag: Tag) => void;
   locale: Locale;
   submitLabel: string;
   onSubmit: (body: Body) => Promise<boolean>;
@@ -55,16 +61,17 @@ function CostForm({
 }) {
   const { t } = useI18n();
   const uid = useId();
-  const sorted = useMemo(
-    () => [...categories.filter((c) => c.kind === "fixed"), ...categories.filter((c) => c.kind !== "fixed")],
-    [categories],
-  );
+  const sorted = useMemo(() => byName(categories, (c) => (locale === "de" ? c.name_de : c.name_en), locale), [categories, locale]);
   const [name, setName] = useState(initial?.name ?? "");
   const [amount, setAmount] = useState(initial ? centsToInput(initial.amount_cents, locale) : "");
-  const [categoryId, setCategoryId] = useState<number | null>(initial ? initial.category_id : (sorted[0]?.id ?? null));
+  const [categoryId, setCategoryId] = useState<number | null>(
+    // a new cost starts in the first category of the fixed kind
+    initial ? initial.category_id : ((sorted.find((c) => c.kind === "fixed") ?? sorted[0])?.id ?? null),
+  );
   const [months, setMonths] = useState(initial?.interval_months ?? 1);
   const [start, setStart] = useState(initial?.start_on ?? today());
   const [end, setEnd] = useState(initial?.end_on ?? "");
+  const [tagIds, setTagIds] = useState<number[]>(initial?.tag_ids ?? []);
   const [busy, setBusy] = useState(false);
 
   const cents = parseMoney(amount);
@@ -87,11 +94,13 @@ function CostForm({
         end_on: end || null,
         // keep the link of a utility instalment to its meter
         meter_id: initial?.meter_id ?? null,
+        tag_ids: tagIds,
       });
       if (ok && !initial) {
         setName("");
         setAmount("");
         setEnd("");
+        setTagIds([]);
       }
     } finally {
       setBusy(false);
@@ -99,7 +108,7 @@ function CostForm({
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div className="space-y-1.5">
         <Label htmlFor={`${uid}-name`}>{t("fixed.name")}</Label>
         <Input id={`${uid}-name`} value={name} onChange={(e) => setName(e.target.value)} required />
@@ -149,6 +158,9 @@ function CostForm({
         <Label htmlFor={`${uid}-end`}>{t("fixed.end")}</Label>
         <Input id={`${uid}-end`} type="date" value={end} aria-invalid={endInvalid} onChange={(e) => setEnd(e.target.value)} />
       </div>
+      <div className="sm:col-span-2 lg:col-span-3">
+        <TagPicker tags={tags} selected={tagIds} onChange={setTagIds} onCreated={onTagCreated} />
+      </div>
       <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
         <Button type="submit" disabled={busy || !valid}>
           {!initial && <Plus />} {submitLabel}
@@ -167,11 +179,16 @@ export function FixedCosts() {
   const { t, locale } = useI18n();
   const costs = useData(() => api.recurring(), "recurring");
   const categories = useData(() => api.categories(), "categories");
+  const tagList = useData(() => api.tags(), "tags");
   const [editing, setEditing] = useState<number | null>(null);
+  const [filter, setFilter] = useState<number | null>(null);
 
   if (costs.error) return <p className="glass rounded-2xl p-6 text-destructive">{costs.error.message}</p>;
-  if (!costs.data || !categories.data) return <Skeleton className="h-96 rounded-3xl" />;
+  if (!costs.data || !categories.data || !tagList.data) return <Skeleton className="h-96 rounded-3xl" />;
   const cats = categories.data;
+  const tags = tagList.data;
+  const addTag = (tag: Tag) => tagList.setData([...tags, tag].sort((a, b) => a.name.localeCompare(b.name)));
+  const shown = filter === null ? costs.data : costs.data.filter((c) => c.tag_ids.includes(filter));
   const monthly = costs.data
     .filter((c) => !c.end_on || c.end_on >= today())
     .filter((c) => c.start_on <= today())
@@ -216,17 +233,21 @@ export function FixedCosts() {
       <Tile index={1} title={t("fixed.add")}>
         <CostForm
           categories={cats}
+          tags={tags}
+          onTagCreated={addTag}
           locale={locale}
           submitLabel={t("common.add")}
           onSubmit={(body) => run(() => api.createRecurring(body))}
         />
       </Tile>
 
+      <TagFilter tags={tags} value={filter} onChange={setFilter} />
+
       {costs.data.length === 0 ? (
         <p className="glass rounded-2xl p-6 text-center text-sm text-muted-foreground">{t("fixed.empty")}</p>
       ) : (
         <ul className="space-y-2">
-          {costs.data.map((cost) => {
+          {shown.map((cost) => {
             const category = cats.find((c) => c.id === cost.category_id);
             if (editing === cost.id) {
               return (
@@ -234,6 +255,8 @@ export function FixedCosts() {
                   <CostForm
                     initial={cost}
                     categories={cats}
+                    tags={tags}
+                    onTagCreated={addTag}
                     locale={locale}
                     submitLabel={t("common.save")}
                     onCancel={() => setEditing(null)}
@@ -254,6 +277,7 @@ export function FixedCosts() {
                     <span className="size-2.5 shrink-0 rounded-full" style={{ background: category?.color ?? "transparent" }} aria-hidden />
                     {category ? (locale === "de" ? category.name_de : category.name_en) : t("receipt.uncategorized")}
                   </p>
+                  <TagChips ids={cost.tag_ids} tags={tags} />
                 </div>
                 <div className="text-right">
                   <p className="tabular font-semibold">
