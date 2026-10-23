@@ -137,7 +137,7 @@ test("open automatic section is accessible and does not scroll sideways at 320 p
   await openAuto(card);
   await createToken(card);
   await card.getByLabel("Vorlage").selectOption("tasmota");
-  for (const theme of ["light", "dark", "contrast"]) {
+  for (const theme of ["light", "dark", "contrast", "contrast-light"]) {
     await page.evaluate((value) => localStorage.setItem("theme", value), theme);
     await page.reload();
     const again = page.getByTestId("meter-card").filter({ hasText: name });

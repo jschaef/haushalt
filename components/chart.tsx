@@ -6,6 +6,7 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import { useTheme } from "next-themes";
 import { useEffect, useRef } from "react";
+import { isContrast } from "@/lib/themes";
 
 echarts.use([BarChart, PieChart, GridComponent, TooltipComponent, CanvasRenderer]);
 
@@ -19,7 +20,7 @@ export function Chart({ option, className, label }: { option: ChartOption; class
 
   useEffect(() => {
     if (!ref.current) return;
-    const instance = echarts.init(ref.current, resolvedTheme === "light" ? undefined : "dark", { renderer: "canvas" });
+    const instance = echarts.init(ref.current, resolvedTheme === "light" || resolvedTheme === "contrast-light" ? undefined : "dark", { renderer: "canvas" });
     chart.current = instance;
     const observer = new ResizeObserver(() => instance.resize());
     observer.observe(ref.current);
@@ -31,8 +32,10 @@ export function Chart({ option, className, label }: { option: ChartOption; class
   }, [resolvedTheme]);
 
   useEffect(() => {
-    // high contrast: white, larger chart texts
-    const contrast = resolvedTheme === "contrast" ? { textStyle: { color: "#ffffff", fontSize: 14 } } : {};
+    // low-vision modes: plain white or black, larger chart texts
+    const contrast = isContrast(resolvedTheme)
+      ? { textStyle: { color: resolvedTheme === "contrast" ? "#ffffff" : "#000000", fontSize: 14 } }
+      : {};
     chart.current?.setOption({ backgroundColor: "transparent", ...contrast, ...option }, { notMerge: true });
   }, [option, resolvedTheme]);
 

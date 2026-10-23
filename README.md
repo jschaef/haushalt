@@ -22,9 +22,9 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
 - **Household:** several members, shared data, German and English UI.
 - **Modern UI:** bento dashboard, glass design, dark mode, animations, view
   transitions, command palette (Ctrl/⌘ K), swipe gestures on the phone.
-- **Accessible:** light, dark and a high-contrast mode for low vision (larger
-  text, no transparency or motion); every page is checked automatically
-  against WCAG 2.2 AA (EN 301 549) in all three modes.
+- **Accessible:** light, dark and two high-contrast modes for low vision, on
+  black or on white (larger text, no transparency or motion); every page is
+  checked automatically against WCAG 2.2 AA (EN 301 549) in all four modes.
 
 ## Run with containers
 

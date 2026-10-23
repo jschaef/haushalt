@@ -7,10 +7,9 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { I18nProvider } from "@/lib/i18n/provider";
 import { isLocale, negotiate } from "@/lib/i18n/messages";
 import { LOCALE_COOKIE } from "@/lib/session";
+import { THEMES } from "@/lib/themes";
 import "./globals.css";
 
-// "contrast": high-contrast mode for people with low vision (app/globals.css)
-const THEMES = ["light", "dark", "contrast"];
 
 export const metadata: Metadata = {
   title: "Haushalt",
@@ -34,7 +33,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     // next-themes sets the class on <html> before hydration
     <html lang={locale} className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider attribute="class" themes={THEMES} defaultTheme="dark" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" themes={[...THEMES]} defaultTheme="dark" enableSystem disableTransitionOnChange>
           <I18nProvider initialLocale={locale}>
             <MotionMode>
               <TooltipProvider>{children}</TooltipProvider>

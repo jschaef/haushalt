@@ -12,6 +12,7 @@ import { ScanProvider, useScan } from "@/components/scan";
 import { api } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/provider";
 import type { MessageKey } from "@/lib/i18n/messages";
+import { isContrast, toggledContrast, toggledLightness } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 const NAV: { href: string; label: MessageKey; icon: typeof LayoutGrid }[] = [
@@ -59,25 +60,24 @@ function ThemeToggle() {
   const { t } = useI18n();
   const { resolvedTheme, setTheme } = useTheme();
   return (
-    <Button variant="ghost" size="icon" aria-label={t("palette.toggleTheme")} onClick={() => setTheme(resolvedTheme === "light" ? "dark" : "light")}>
+    <Button variant="ghost" size="icon" aria-label={t("palette.toggleTheme")} onClick={() => setTheme(toggledLightness(resolvedTheme))}>
       <Sun className="hidden dark:block" />
       <Moon className="dark:hidden" />
     </Button>
   );
 }
 
-// One click into the high-contrast mode and back to the previous theme.
+const PREVIOUS_THEME = "haushalt_theme_before_contrast";
+
+// One click into the low-vision mode (on the current lightness) and back to
+// the previous theme.
 function ContrastToggle() {
   const { t } = useI18n();
   const { resolvedTheme, setTheme } = useTheme();
-  const active = resolvedTheme === "contrast";
+  const active = isContrast(resolvedTheme);
   const toggle = () => {
-    if (active) {
-      setTheme(localStorage.getItem("haushalt_theme_before_contrast") ?? "dark");
-    } else {
-      localStorage.setItem("haushalt_theme_before_contrast", resolvedTheme ?? "dark");
-      setTheme("contrast");
-    }
+    if (!active) localStorage.setItem(PREVIOUS_THEME, resolvedTheme ?? "dark");
+    setTheme(toggledContrast(resolvedTheme, active ? localStorage.getItem(PREVIOUS_THEME) : null));
   };
   return (
     <Button variant="ghost" size="icon" aria-label={t("a11y.contrast")} aria-pressed={active} onClick={toggle} data-testid="contrast-toggle">

@@ -8,6 +8,7 @@ import { Camera, Eye, Gauge, Landmark, LayoutGrid, Languages, Receipt, Repeat, S
 import { api, type Store } from "@/lib/api";
 import { useI18n } from "@/lib/i18n/provider";
 import { useScan } from "@/components/scan";
+import { toggledContrast, toggledLightness } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 type Command = { id: string; group: string; label: string; icon: ReactNode; run: () => void; hint?: string };
@@ -54,8 +55,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       { id: "bank", group: nav, label: t("nav.bank"), icon: <Landmark />, run: go("/bank") },
       { id: "settings", group: nav, label: t("nav.settings"), icon: <Settings />, run: go("/settings") },
       { id: "scan", group: actions, label: t("nav.scan"), icon: <Camera />, run: scan.openCamera },
-      { id: "theme", group: actions, label: t("palette.toggleTheme"), icon: <SunMoon />, run: () => setTheme(resolvedTheme === "light" ? "dark" : "light") },
-      { id: "contrast", group: actions, label: t("a11y.contrast"), icon: <Eye />, run: () => setTheme(resolvedTheme === "contrast" ? "dark" : "contrast") },
+      { id: "theme", group: actions, label: t("palette.toggleTheme"), icon: <SunMoon />, run: () => setTheme(toggledLightness(resolvedTheme)) },
+      { id: "contrast", group: actions, label: t("a11y.contrast"), icon: <Eye />, run: () => setTheme(toggledContrast(resolvedTheme, null)) },
       { id: "language", group: actions, label: t("palette.toggleLanguage"), icon: <Languages />, run: () => setLocale(locale === "de" ? "en" : "de") },
       ...stores.map((store) => ({
         id: `store-${store.id}`,

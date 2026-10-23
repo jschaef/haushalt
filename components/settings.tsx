@@ -14,6 +14,7 @@ import { api, type Category } from "@/lib/api";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
+import type { Theme } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 const SELECT_CLASS =
@@ -60,11 +61,12 @@ function ThemeTile() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- avoid a hydration mismatch
     setMounted(true);
   }, []);
-  const options: { value: "dark" | "light" | "system" | "contrast"; label: MessageKey }[] = [
+  const options: { value: Theme | "system"; label: MessageKey }[] = [
     { value: "dark", label: "settings.themeDark" },
     { value: "light", label: "settings.themeLight" },
     { value: "system", label: "settings.themeSystem" },
     { value: "contrast", label: "settings.themeContrast" },
+    { value: "contrast-light", label: "settings.themeContrastLight" },
   ];
   return (
     <Tile index={1} title={t("settings.theme")}>

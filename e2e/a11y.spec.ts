@@ -20,7 +20,12 @@ async function violations(page: Page) {
 async function setTheme(page: Page, theme: string) {
   await page.evaluate((value) => localStorage.setItem("theme", value), theme);
   await page.reload();
-  await expect(page.locator("html")).toHaveClass(new RegExp(`\\b${theme}\\b`));
+  await expect(page.locator("html")).toHaveClass(themeClass(theme));
+}
+
+// whole class names: "contrast" must not match "contrast-light"
+function themeClass(theme: string) {
+  return new RegExp(`(^|\\s)${theme}(\\s|$)`);
 }
 
 test("high-contrast mode: toggle, larger text, no transparency, persists", async ({ page }) => {
@@ -29,7 +34,7 @@ test("high-contrast mode: toggle, larger text, no transparency, persists", async
   const toggle = page.getByTestId("contrast-toggle").filter({ visible: true });
   await toggle.click();
   const html = page.locator("html");
-  await expect(html).toHaveClass(/\bcontrast\b/);
+  await expect(html).toHaveClass(themeClass("contrast"));
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   expect(parseFloat(await html.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(19);
   const glass = page.locator(".glass").first();
@@ -43,15 +48,49 @@ test("high-contrast mode: toggle, larger text, no transparency, persists", async
     expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
   }
   await page.reload();
-  await expect(html).toHaveClass(/\bcontrast\b/);
+  await expect(html).toHaveClass(themeClass("contrast"));
   await page.getByTestId("contrast-toggle").filter({ visible: true }).click();
-  await expect(html).toHaveClass(/\bdark\b/);
+  await expect(html).toHaveClass(themeClass("dark"));
 });
 
-for (const theme of ["contrast", "dark", "light"]) {
+test("light low-vision mode: from the light theme, black on white, sun/moon keeps the mode", async ({ page }) => {
+  await login(page);
+  await setTheme(page, "light");
+  const html = page.locator("html");
+  const toggle = page.getByTestId("contrast-toggle").filter({ visible: true });
+  await toggle.click();
+  await expect(html).toHaveClass(themeClass("contrast-light"));
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  expect(parseFloat(await html.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(19);
+  expect(await page.locator(".glass").first().evaluate((el) => getComputedStyle(el).backdropFilter)).toBe("none");
+  const body = page.locator("body");
+  expect(await body.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(255, 255, 255)");
+  expect(await body.evaluate((el) => getComputedStyle(el).color)).toBe("rgb(0, 0, 0)");
+  for (const path of PAGES) {
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, `${path} scrolls sideways`).toBeLessThanOrEqual(0);
+  }
+  // light/dark switch stays in the low-vision mode
+  const lightness = page.getByRole("button", { name: "Hell/Dunkel umschalten" }).filter({ visible: true });
+  await lightness.click();
+  await expect(html).toHaveClass(themeClass("contrast"));
+  await lightness.click();
+  await expect(html).toHaveClass(themeClass("contrast-light"));
+  await page.reload();
+  await expect(html).toHaveClass(themeClass("contrast-light"));
+  await toggle.click();
+  await expect(html).toHaveClass(themeClass("light"));
+  // also selectable in the settings
+  await page.goto("/settings");
+  await page.getByRole("button", { name: "Hoher Kontrast hell" }).click();
+  await expect(html).toHaveClass(themeClass("contrast-light"));
+});
+
+for (const theme of ["contrast", "contrast-light", "dark", "light"]) {
   test(`no serious accessibility violations (${theme})`, async ({ page }) => {
-    // dark/light are checked for structure and contrast as well; the
-    // contrast theme must pass everything at WCAG AA
+    // every theme must pass WCAG AA, the low-vision modes included
     await login(page);
     await setTheme(page, theme);
     const found: string[] = [];
@@ -72,7 +111,7 @@ test("login page has no serious accessibility violations", async ({ page }) => {
   expect(await violations(page)).toEqual([]);
 });
 
-for (const theme of ["dark", "contrast"]) {
+for (const theme of ["dark", "contrast", "contrast-light"]) {
   test(`reflow: no sideways scrolling at 320 CSS px (${theme})`, async ({ page }) => {
     // WCAG 1.4.10: content usable at 320 px width without horizontal scrolling
     await page.setViewportSize({ width: 320, height: 640 });

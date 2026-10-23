@@ -76,12 +76,15 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   detection by whole words. Booking status decides counting: only `counted`
   enters the statistics (`receipt`/`fixed` are counted through the receipt or
   recurring cost). Deleting those reopens linked bookings.
-- Themes (next-themes): `light`, `dark`, `contrast` (low-vision mode in
-  `app/globals.css`: black/white/yellow, 118.75 % text, opaque, no motion via
-  `components/motion-mode.tsx`).
+- Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
+  modes in `app/globals.css`, `contrast` (black/white/yellow) and
+  `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,
+  no motion via `components/motion-mode.tsx`. The eye button keeps the
+  lightness, the sun/moon button keeps the low-vision mode. Only `contrast`
+  uses the Tailwind `dark:` variant.
 - Accessibility baseline (Jochen: follow the standards): WCAG 2.2 level AA as
   referenced by EN 301 549 V4.1.1 (BFSG). `e2e/a11y.spec.ts` runs axe
-  (wcag2a-22aa, serious/critical) on every page in all three themes, checks
+  (wcag2a-22aa, serious/critical) on every page in all four themes, checks
   reflow at 320 px (1.4.10), focus not obscured by the sticky bars (2.4.11)
   and no sideways scrolling in high contrast - add new pages to its PAGES list.
 - i18n: `lib/i18n/messages.ts` (de reference, en typed against it), cookie `haushalt_locale`.
