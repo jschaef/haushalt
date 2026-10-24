@@ -182,3 +182,37 @@ test("status badges keep their contrast in the light theme", async ({ page }) =>
   await page.waitForTimeout(2000);
   expect(await violations(page)).toEqual([]);
 });
+
+test("amounts fit their tiles on a 360 px phone in the low-vision modes", async ({ page }) => {
+  // 1.088 € a month is about 13.000 € a year: "13.054,01 €" was cut off at
+  // the tile edge (the tile clips, so the page itself does not scroll)
+  await page.setViewportSize({ width: 360, height: 780 });
+  await login(page);
+  await page.evaluate(async () => {
+    const start = new Date(Date.now() - 400 * 864e5).toISOString().slice(0, 10);
+    await fetch("/api/v1/recurring", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Miete gross", category_id: null, amount_cents: 108800, interval_months: 1, start_on: start }),
+    });
+  });
+  for (const theme of ["contrast-light", "contrast"]) {
+    await setTheme(page, theme);
+    await page.goto("/dashboard");
+    await page.waitForLoadState("networkidle");
+    await page.waitForTimeout(1500); // the numbers count up first
+    const cut = await page.evaluate(() =>
+      // the number box is as wide as the tile; the text can run past it
+      [...document.querySelectorAll("section.glass [data-value]")].flatMap((number) =>
+        number.scrollWidth > number.clientWidth + 1 ? [`${number.textContent}: ${number.scrollWidth} px text in ${number.clientWidth} px`] : [],
+      ),
+    );
+    expect(cut, theme).toEqual([]);
+  }
+  // a cleaned-up household: the big cost goes again
+  await page.evaluate(async () => {
+    const costs = await (await fetch("/api/v1/recurring")).json();
+    const big = costs.find((c: { name: string }) => c.name === "Miete gross");
+    await fetch(`/api/v1/recurring/${big.id}`, { method: "DELETE" });
+  });
+});

@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState , type CSSProperties } from "react";
 import { ArrowDownRight, ArrowUpRight, Camera, CheckCircle2, ChevronRight, Upload } from "lucide-react";
 import { AnimatedNumber } from "@/components/animated-number";
 import { BentoGrid, Tile } from "@/components/bento";
@@ -107,8 +107,8 @@ export function Dashboard() {
           <AverageTile index={2} label={t("dash.perMonth")} value={s.average.total.month} fmt={fmt} testId="tile-month" />
           <AverageTile index={3} label={t("dash.perYear")} value={s.average.total.year} fmt={fmt} testId="tile-year" />
 
-          <Tile index={4} title={t("dash.periodTotal")} testId="tile-total">
-            <AnimatedNumber value={s.total_cents} format={fmt} className="tabular text-2xl font-semibold" />
+          <Tile index={4} title={t("dash.periodTotal")} testId="tile-total" className="@container">
+            <AnimatedNumber value={s.total_cents} format={fmt} className="tabular whitespace-nowrap font-semibold" style={fitAmount(fmt(s.total_cents))} />
             <Trend current={s.total_cents} previous={s.previous_total_cents} />
             <div className="text-xs text-muted-foreground">
               {s.receipt_count} {t("dash.receipts")}
@@ -189,10 +189,18 @@ function MoreLink({ href }: { href: string }) {
   );
 }
 
+// Amounts in the small tiles: text-2xl, and only as much smaller as the
+// text needs to fit the tile (phones, larger text of the low-vision modes)
+// instead of being cut off. A tabular digit is about 0.62 em wide; cqi is
+// 1 % of the tile's content width (the tile is the size container).
+function fitAmount(text: string): CSSProperties {
+  return { fontSize: `min(1.5rem, ${(100 / (text.length * 0.62)).toFixed(1)}cqi)` };
+}
+
 function AverageTile({ index, label, value, fmt, testId }: { index: number; label: string; value: number; fmt: (v: number) => string; testId: string }) {
   return (
-    <Tile index={index} title={label} testId={testId} className="justify-between">
-      <AnimatedNumber value={value} format={fmt} className="tabular text-2xl font-semibold tracking-tight" />
+    <Tile index={index} title={label} testId={testId} className="@container justify-between">
+      <AnimatedNumber value={value} format={fmt} className="tabular whitespace-nowrap font-semibold tracking-tight" style={fitAmount(fmt(value))} />
     </Tile>
   );
 }
