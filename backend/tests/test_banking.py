@@ -180,7 +180,7 @@ def test_import_matches_and_dedupes(client, auth, png):
     assert result == {
         "read": 5, "imported": 5, "duplicates": 0, "receipt": 1, "fixed": 1, "counted": 0, "review": 2, "ignored": 1,
         # a CSV without the own IBAN above the table: no account, no transfers
-        "transfers": 0, "account_id": None, "account_name": None,
+        "transfers": 0, "settlements": 0, "account_id": None, "account_name": None,
     }
     txs = client.get("/api/v1/bank/transactions", headers=auth).json()
     assert next(t for t in txs if t["status"] == "receipt")["receipt_id"] == rewe

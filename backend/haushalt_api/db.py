@@ -248,6 +248,9 @@ class BankAccount(Base):
     bank: Mapped[str] = mapped_column(String(64), default="")
     # normalized (no spaces, upper case); empty when the statements never say
     iban: Mapped[str] = mapped_column(String(34), default="", index=True)
+    # credit cards have no IBAN: the masked number of the card statement
+    # ("4000********1234"); empty for giro and savings accounts
+    card_number: Mapped[str] = mapped_column(String(19), default="", index=True)
     color: Mapped[str] = mapped_column(String(7), default="#64748b")
 
 
@@ -276,6 +279,10 @@ class BankTransaction(Base):
     receipt_id: Mapped[int | None] = mapped_column(ForeignKey("receipts.id", ondelete="SET NULL"))
     recurring_id: Mapped[int | None] = mapped_column(ForeignKey("recurring_costs.id", ondelete="SET NULL"))
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
+    # card bookings: the settlement date of their card statement
+    statement_on: Mapped[date | None] = mapped_column(Date)
+    # status ignored: this debit pays the statement of that card account
+    settles_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     # only for status counted: the booking's own tags
     tags: Mapped[list[Tag]] = relationship(secondary=bank_transaction_tags, lazy="selectin", order_by=Tag.name)
@@ -369,7 +376,12 @@ _LATER_COLUMNS = {
         "token_version": "INTEGER NOT NULL DEFAULT 0",
     },
     "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
-    "bank_transactions": {"account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL"},
+    "bank_accounts": {"card_number": "VARCHAR(19) NOT NULL DEFAULT ''"},
+    "bank_transactions": {
+        "account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
+        "statement_on": "DATE",
+        "settles_account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
+    },
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {
         "ingest_token_hash": "VARCHAR(64) NOT NULL DEFAULT ''",

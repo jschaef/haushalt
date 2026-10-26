@@ -577,7 +577,18 @@ function TagsTile() {
 
 type AccountDraft = BankAccountInput;
 
-function AccountFields({ idPrefix, draft, onChange }: { idPrefix: string; draft: AccountDraft; onChange: (d: Partial<AccountDraft>) => void }) {
+function AccountFields({
+  idPrefix,
+  draft,
+  card = "",
+  onChange,
+}: {
+  idPrefix: string;
+  draft: AccountDraft;
+  // a credit card: its number comes from the statement, there is no IBAN
+  card?: string;
+  onChange: (d: Partial<AccountDraft>) => void;
+}) {
   const { t } = useI18n();
   return (
     <>
@@ -593,20 +604,29 @@ function AccountFields({ idPrefix, draft, onChange }: { idPrefix: string; draft:
         </Label>
         <Input id={`${idPrefix}-bank`} value={draft.bank} maxLength={64} onChange={(e) => onChange({ bank: e.target.value })} />
       </div>
-      <div className="min-w-0 space-y-1">
-        <Label htmlFor={`${idPrefix}-iban`} className="text-xs">
-          {t("accounts.iban")}
-        </Label>
-        <Input
-          id={`${idPrefix}-iban`}
-          value={draft.iban}
-          maxLength={42}
-          autoCapitalize="characters"
-          spellCheck={false}
-          className="font-mono"
-          onChange={(e) => onChange({ iban: e.target.value })}
-        />
-      </div>
+      {card ? (
+        <div className="min-w-0 space-y-1">
+          <div className="text-xs font-medium">{t("accounts.card")}</div>
+          <div className="flex h-9 items-center font-mono text-sm" data-testid="account-card">
+            …{card.slice(-4)}
+          </div>
+        </div>
+      ) : (
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor={`${idPrefix}-iban`} className="text-xs">
+            {t("accounts.iban")}
+          </Label>
+          <Input
+            id={`${idPrefix}-iban`}
+            value={draft.iban}
+            maxLength={42}
+            autoCapitalize="characters"
+            spellCheck={false}
+            className="font-mono"
+            onChange={(e) => onChange({ iban: e.target.value })}
+          />
+        </div>
+      )}
       <div className="space-y-1">
         <Label htmlFor={`${idPrefix}-color`} className="text-xs">
           {t("accounts.color")}
@@ -645,7 +665,7 @@ function AccountRow({ account, onChanged }: { account: BankAccount; onChanged: (
   return (
     <li className="space-y-2 rounded-xl bg-muted/40 px-3 py-2" data-testid="account-row">
       <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
-        <AccountFields idPrefix={uid} draft={draft} onChange={(changes) => setDraft({ ...draft, ...changes })} />
+        <AccountFields idPrefix={uid} draft={draft} card={account.card_number} onChange={(changes) => setDraft({ ...draft, ...changes })} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">{t("accounts.bookings", { n: account.bookings })}</span>

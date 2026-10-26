@@ -137,4 +137,4 @@ def test_migration_adds_account_column(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "engine", engine)
     db_module.Base.metadata.create_all(engine)
     db_module._add_missing_columns()
-    assert "account_id" in {c["name"] for c in inspect(engine).get_columns("bank_transactions")}
+    assert {"account_id", "statement_on", "settles_account_id"} <= {c["name"] for c in inspect(engine).get_columns("bank_transactions")}

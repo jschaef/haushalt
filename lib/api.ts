@@ -167,6 +167,8 @@ export type BankTransaction = {
   receipt_id: number | null;
   recurring_id: number | null;
   category_id: number | null;
+  // ignored: this debit pays the statement of that credit card account
+  settles_account_id: number | null;
   tag_ids: number[];
 };
 
@@ -176,11 +178,14 @@ export type ImportResult = {
   duplicates: number;
   // bookings between two own accounts (ignored, they are no spending)
   transfers: number;
+  // debits paying a card statement (the card bookings count one by one)
+  settlements: number;
   account_id: number | null;
   account_name: string | null;
 } & Record<BookingStatus, number>;
 
-export type BankAccount = { id: number; name: string; bank: string; iban: string; color: string; bookings: number };
+// card_number: masked number of a credit card account, "" for other accounts
+export type BankAccount = { id: number; name: string; bank: string; iban: string; card_number: string; color: string; bookings: number };
 export type BankAccountInput = Pick<BankAccount, "name" | "bank" | "iban" | "color">;
 
 export type ReceiptCandidate = { id: number; store_name: string; purchased_on: string | null; total_cents: number; store_matches: boolean };

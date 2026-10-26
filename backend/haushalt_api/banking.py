@@ -12,6 +12,11 @@ Matching rules for money going out, in this order:
 Everything else waits for review. Money coming in is ignored by default, and
 so is every transfer to or from another of the household's own accounts
 (counterparty IBAN = an account's IBAN): otherwise it would count twice.
+
+Credit cards: every card transaction is a booking of the card's own account
+and counts like any other. The monthly debit paying the card statement is
+therefore ignored: a debit on another account whose amount is the sum of the
+card bookings with one statement date, booked shortly after that date.
 """
 
 import csv
@@ -23,7 +28,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from defusedxml import ElementTree
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .db import BankAccount, BankTransaction, CategoryRule, Receipt, RecurringCost, Tag, TagRule
@@ -31,6 +36,8 @@ from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
 MATCH_DAYS = 3
+# a card statement is debited this many days before/after its date
+SETTLEMENT_DAYS = (3, 14)
 RULE_PREFIX = "bank:"
 
 
@@ -50,6 +57,7 @@ class Booking:
     purpose: str = ""
     iban: str = ""
     currency: str = "EUR"
+    statement_on: date | None = None
 
 
 # --- amounts and dates -------------------------------------------------------
@@ -158,7 +166,7 @@ def parse_camt(data: bytes) -> list[Booking]:
 
 # header words (normalized) -> field; earlier entries win
 COLUMNS = [
-    ("date", ("buchungstag", "buchungsdatum", "booking date", "datum", "date", "buchung", "wertstellung", "valuta")),
+    ("date", ("buchungstag", "buchungsdatum", "booking date", "datum", "date", "buchung", "wertstellung", "valuta", "belegdatum")),
     ("amount", ("betrag eur", "betrag", "umsatz", "amount", "betrag in eur")),
     ("debit", ("soll", "debit", "ausgang")),
     ("credit", ("haben", "credit", "eingang")),
@@ -194,6 +202,13 @@ def _map_header(cells: list[str]) -> dict[str, int]:
             if index is not None:
                 mapping[field] = index
                 break
+    # card statements: "Betrag" in the card's foreign currency, then "Kurs",
+    # then "Betrag" in euros - take the one after the exchange rate
+    rate = next((i for i, n in enumerate(names) if n in ("kurs", "wechselkurs")), None)
+    if rate is not None and "amount" in mapping:
+        after = next((i for i in range(rate + 1, len(names)) if names[i] == names[mapping["amount"]]), None)
+        if after is not None:
+            mapping["amount"] = after
     return mapping
 
 
@@ -210,6 +225,35 @@ def _csv_header(data: bytes) -> tuple[list[str], str, int | None, dict[str, int]
     return lines, delimiter, None, {}
 
 
+_CARD_RE = re.compile(r"\b(\d{4})[*xX•]{4,8}(\d{4})\b")
+_STATEMENT_DATE_RE = re.compile(r"abrechnungsdatum\W*(\d{1,2}\.\d{1,2}\.\d{2,4})", re.IGNORECASE)
+_PAYMENT_SERVICE_RE = re.compile(r"^(?:paypal|pp|klarna|sumup|sq|zettle)\s*\*\s*", re.IGNORECASE)
+
+
+def _preamble(lines: list[str], header_index: int | None) -> list[str]:
+    return lines[: header_index or 0]
+
+
+def card_number(lines: list[str]) -> str:
+    """The masked card number above the table of a card statement, "" for
+    any other statement. Only the masked form is kept."""
+    for line in lines:
+        found = _CARD_RE.search(line)
+        if found:
+            return f"{found.group(1)}********{found.group(2)}"
+    return ""
+
+
+def card_merchant(purpose: str) -> str:
+    """Card statements have no counterparty column: the merchant is the
+    purpose up to the first comma ("SOFTWARE INC, 94104 EXAMPLE.COM, CA, US"),
+    without a payment service in front ("PAYPAL *SHOP" -> "SHOP"), so the
+    category is learned per shop and not for PayPal."""
+    merchant = purpose.split(",", 1)[0]
+    merchant = _PAYMENT_SERVICE_RE.sub("", merchant.strip()) or merchant
+    return " ".join(merchant.split())
+
+
 def parse_csv(data: bytes) -> list[Booking]:
     """CSV exports differ per bank: preamble lines, ';' or ',', German or
     English headers, one signed amount or debit/credit columns."""
@@ -218,6 +262,13 @@ def parse_csv(data: bytes) -> list[Booking]:
         # name what was seen, so an unknown bank format can be added quickly
         first = next((line for line in lines if line.strip()), "")[:200]
         raise StatementError(f"No header with date and amount columns found (first line: {first!r})")
+    preamble = _preamble(lines, header_index)
+    card = bool(card_number(preamble))
+    statement_on = None
+    for line in preamble:
+        found = _STATEMENT_DATE_RE.search(line)
+        if found:
+            statement_on = parse_date(found.group(1))
     reader = csv.reader(io.StringIO("\n".join(lines[header_index + 1 :])), delimiter=delimiter)
     bookings = []
     for row in reader:
@@ -237,8 +288,16 @@ def parse_csv(data: bytes) -> list[Booking]:
         else:
             debit, credit = cell("debit"), cell("credit")
             amount = -abs(parse_amount(debit)) if debit else abs(parse_amount(credit or "0"))
+        counterparty = cell("counterparty") or (card_merchant(cell("purpose")) if card else "")
         bookings.append(
-            Booking(booked_on, amount, cell("counterparty")[:256], cell("purpose")[:512], cell("iban").replace(" ", "")[:34])
+            Booking(
+                booked_on,
+                amount,
+                counterparty[:256],
+                cell("purpose")[:512],
+                cell("iban").replace(" ", "")[:34],
+                statement_on=statement_on if card else None,
+            )
         )
     return bookings
 
@@ -285,7 +344,7 @@ def statement_iban(data: bytes) -> str:
                     return iban
         return ""
     lines, _, header_index, _ = _csv_header(data)
-    for line in lines[: header_index or 0]:
+    for line in _preamble(lines, header_index):
         for candidate in _IBAN_RE.findall(line.upper()):
             iban = normalize_iban(candidate)
             if valid_iban(iban):
@@ -293,21 +352,41 @@ def statement_iban(data: bytes) -> str:
     return ""
 
 
+def statement_card(data: bytes) -> str:
+    """The masked card number of a card statement, "" for other statements."""
+    if _is_xml(data):
+        return ""
+    lines, _, header_index, _ = _csv_header(data)
+    return card_number(_preamble(lines, header_index))
+
+
 def own_ibans(session: Session) -> set[str]:
     return {iban for iban in session.scalars(select(BankAccount.iban)) if iban}
 
 
-def statement_account(session: Session, iban: str, account_id: int | None) -> BankAccount | None:
-    """The chosen account (it learns the IBAN if it had none), else the one
-    with the statement's IBAN - created when it is new - else none."""
+def statement_account(session: Session, iban: str, account_id: int | None, card: str = "") -> BankAccount | None:
+    """The chosen account (it learns the IBAN or card number if it had none),
+    else the one with the statement's IBAN or card number - created when it
+    is new - else none."""
     if account_id is not None:
         account = session.get(BankAccount, account_id)
         if account is None:
             raise StatementError("Unknown account")
         if iban and account.iban and account.iban != iban:
             raise AccountMismatch(f"The statement belongs to the account {iban}, not to {account.name}")
-        if iban and not account.iban:
+        if card and (account.iban or (account.card_number and account.card_number != card)):
+            raise AccountMismatch(f"The statement belongs to the card …{card[-4:]}, not to {account.name}")
+        if iban and not account.iban and not account.card_number:
             account.iban = iban
+        if card and not account.card_number:
+            account.card_number = card
+        return account
+    if card:
+        account = session.scalar(select(BankAccount).where(BankAccount.card_number == card))
+        if account is None:
+            account = BankAccount(name=f"Kreditkarte …{card[-4:]}", card_number=card)
+            session.add(account)
+            session.flush()
         return account
     if not iban:
         return None
@@ -363,6 +442,10 @@ def match(session: Session, tx: BankTransaction, own: set[str] | None = None) ->
     if is_transfer(tx, own_ibans(session) if own is None else own):
         tx.status = "ignored"
         return
+    card_account = card_settlement(session, tx)
+    if card_account is not None:
+        tx.status, tx.settles_account_id = "ignored", card_account
+        return
     if tx.amount_cents >= 0:
         tx.status = "ignored"
         return
@@ -395,6 +478,26 @@ def is_transfer(tx: BankTransaction, own: set[str]) -> bool:
     return bool(tx.iban) and normalize_iban(tx.iban) in own
 
 
+def card_settlement(session: Session, tx: BankTransaction) -> int | None:
+    """The card account whose statement this debit pays: the bookings of one
+    card statement add up to exactly this amount, and the debit is booked
+    around the statement date. None for card bookings themselves."""
+    if tx.amount_cents >= 0 or tx.statement_on is not None:
+        return None
+    before, after = SETTLEMENT_DAYS
+    statements = session.execute(
+        select(BankTransaction.account_id, BankTransaction.statement_on, func.sum(BankTransaction.amount_cents))
+        .join(BankAccount, BankAccount.id == BankTransaction.account_id)
+        .where(
+            BankAccount.card_number != "",
+            BankTransaction.statement_on.between(tx.booked_on - timedelta(days=after), tx.booked_on + timedelta(days=before)),
+        )
+        .group_by(BankTransaction.account_id, BankTransaction.statement_on)
+    )
+    matches = [account_id for account_id, _, total in statements if total == tx.amount_cents and account_id != tx.account_id]
+    return matches[0] if len(matches) == 1 else None
+
+
 def counterparty_pattern(tx: BankTransaction) -> str:
     # column limit (PostgreSQL enforces it, SQLite does not)
     return (RULE_PREFIX + normalize(tx.counterparty))[:256]
@@ -417,7 +520,8 @@ def learn_counterparty(session: Session, tx: BankTransaction) -> None:
 
 def import_statement(session: Session, data: bytes, account_id: int | None = None) -> dict:
     bookings = parse_statement(data)
-    account = statement_account(session, statement_iban(data), account_id)
+    card = statement_card(data)
+    account = statement_account(session, statement_iban(data), account_id, card)
     own = own_ibans(session)
     # fingerprints stay without the account, so statements imported before
     # accounts existed are still recognised as duplicates
@@ -433,6 +537,8 @@ def import_statement(session: Session, data: bytes, account_id: int | None = Non
         match(session, tx, own)
         created.append(tx)
     session.commit()
+    # the giro debit paying this card statement may have been imported first
+    settled = settle_cards(session) if card else 0
     counts = Counter(tx.status for tx in created)
     return {
         "read": len(bookings),
@@ -440,9 +546,26 @@ def import_statement(session: Session, data: bytes, account_id: int | None = Non
         "duplicates": len(bookings) - len(created),
         **{status: counts.get(status, 0) for status in ("receipt", "fixed", "counted", "review", "ignored")},
         "transfers": sum(is_transfer(tx, own) for tx in created),
+        "settlements": settled + sum(tx.settles_account_id is not None for tx in created),
         "account_id": account.id if account else None,
         "account_name": account.name if account else None,
     }
+
+
+def settle_cards(session: Session) -> int:
+    """Bookings waiting for review that pay a card statement -> ignored."""
+    changed = 0
+    for tx in session.scalars(
+        select(BankTransaction).where(
+            BankTransaction.status == "review", BankTransaction.amount_cents < 0, BankTransaction.statement_on.is_(None)
+        )
+    ):
+        card_account = card_settlement(session, tx)
+        if card_account is not None:
+            tx.status, tx.settles_account_id = "ignored", card_account
+            changed += 1
+    session.commit()
+    return changed
 
 
 def rematch(session: Session) -> int:
