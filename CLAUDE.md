@@ -95,6 +95,14 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   rematch, run when an account is saved). Fingerprints stay without the
   account so old imports still dedupe. Income is `ignored` too; the bank
   page has an "Eingänge" view for it.
+- Credit cards (Jochen, 2026-10-23/26: single transactions, CSV export):
+  a card statement (masked card number above the table) is an account
+  with `card_number`, no IBAN; the euro "Betrag" after "Kurs" counts, the
+  merchant comes from the purpose without "PAYPAL *". Card bookings keep
+  their `statement_on`; a debit on another account equal to the sum of one
+  card statement, booked -14..+3 days around its date, is `ignored` with
+  `settles_account_id` (badge "Kartenabrechnung"), also when the card
+  statement is imported after it (`settle_cards`).
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,

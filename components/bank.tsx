@@ -241,7 +241,9 @@ function BookingRow({
           <span className={cn("tabular font-semibold", booking.amount_cents < 0 ? "text-negative" : "text-positive")}>
             {money(booking.amount_cents, locale, booking.currency)}
           </span>
-          <Badge className={BADGE_CLASS[booking.status]}>{transfer ? t("bank.transfer") : t(`bank.${booking.status}`)}</Badge>
+          <Badge className={BADGE_CLASS[booking.status]}>
+            {booking.settles_account_id !== null ? t("bank.settlement") : transfer ? t("bank.transfer") : t(`bank.${booking.status}`)}
+          </Badge>
         </div>
       </div>
       {(booking.status === "receipt" || booking.status === "fixed" || booking.status === "counted") && (
@@ -341,6 +343,7 @@ export function Bank() {
           t("bank.imported", { imported: r.imported, duplicates: r.duplicates, receipt: r.receipt, fixed: r.fixed, counted: r.counted, review: r.review }),
           r.account_name ? t("bank.importedTo", { name: r.account_name }) : "",
           r.transfers ? t("bank.transfers", { n: r.transfers }) : "",
+          r.settlements ? t("bank.settlements", { n: r.settlements }) : "",
         ]
           .filter(Boolean)
           .join(" "),

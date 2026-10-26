@@ -29,6 +29,7 @@ class TransactionOut(BaseModel):
     receipt_id: int | None
     recurring_id: int | None
     category_id: int | None
+    settles_account_id: int | None
     tag_ids: list[int]
 
 
@@ -58,13 +59,22 @@ class AccountOut(BaseModel):
     name: str
     bank: str
     iban: str
+    card_number: str
     color: str
     bookings: int
 
 
 def _account_out(session: Session, account: BankAccount) -> AccountOut:
     count = session.scalar(select(func.count(BankTransaction.id)).where(BankTransaction.account_id == account.id)) or 0
-    return AccountOut(id=account.id, name=account.name, bank=account.bank, iban=account.iban, color=account.color, bookings=count)
+    return AccountOut(
+        id=account.id,
+        name=account.name,
+        bank=account.bank,
+        iban=account.iban,
+        card_number=account.card_number,
+        color=account.color,
+        bookings=count,
+    )
 
 
 def _clean_account(session: Session, body: AccountIn, own_id: int | None = None) -> dict:
@@ -178,7 +188,7 @@ def candidates(tx_id: int, session: Session = Depends(get_session)):
 def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_session)):
     """A person's decision; exactly the link the status needs is kept."""
     tx = _transaction(session, tx_id)
-    tx.receipt_id = tx.recurring_id = tx.category_id = None
+    tx.receipt_id = tx.recurring_id = tx.category_id = tx.settles_account_id = None
     tx.tags = []
     if body.status == "receipt":
         receipt = session.get(Receipt, body.receipt_id) if body.receipt_id else None
