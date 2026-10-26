@@ -174,11 +174,11 @@ def test_import_matches_and_dedupes(client, auth, png):
         (d(2), "Vermieter", "Miete Oktober", "-950,00"),          # recurring cost
         (d(2), "Online Shop", "Bestellung", "-30,00"),            # unknown -> review
         (d(2), "Online Shop", "Bestellung", "-30,00"),            # same again: a second, real booking
-        (d(5), "Arbeitgeber", "Gehalt", "2500,00"),               # income
+        (d(5), "Arbeitgeber", "Gehalt", "2500,00"),               # income: waits for its category
     )
     result = import_file(client, auth, data).json()
     assert result == {
-        "read": 5, "imported": 5, "duplicates": 0, "receipt": 1, "fixed": 1, "counted": 0, "review": 2, "ignored": 1,
+        "read": 5, "imported": 5, "duplicates": 0, "receipt": 1, "fixed": 1, "counted": 0, "review": 3, "ignored": 0,
         # a CSV without the own IBAN above the table: no account, no transfers
         "transfers": 0, "settlements": 0, "account_id": None, "account_name": None,
     }

@@ -358,6 +358,7 @@ function CategoryFields({
         <select id={`${idPrefix}-kind`} value={draft.kind} onChange={(e) => onChange({ kind: e.target.value as Category["kind"] })} className={SELECT_CLASS}>
           <option value="variable">{t("dash.variable")}</option>
           <option value="fixed">{t("dash.fixed")}</option>
+          <option value="income">{t("settings.kindIncome")}</option>
         </select>
       </div>
       <div className="space-y-1.5">
@@ -400,7 +401,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
     }
   }
 
-  const kindLabel = category.kind === "fixed" ? t("dash.fixed") : t("dash.variable");
+  const kindLabel = category.kind === "fixed" ? t("dash.fixed") : category.kind === "income" ? t("settings.kindIncome") : t("dash.variable");
 
   if (!editing) {
     return (
@@ -410,7 +411,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
           <span className="font-medium">{locale === "de" ? category.name_de : category.name_en}</span>
           <span className="ml-2 text-xs text-muted-foreground">{locale === "de" ? category.name_en : category.name_de}</span>
         </span>
-        <Badge variant={category.kind === "fixed" ? "default" : "secondary"}>{kindLabel}</Badge>
+        <Badge variant={category.kind === "fixed" ? "default" : category.kind === "income" ? "outline" : "secondary"}>{kindLabel}</Badge>
         <Button
           variant="ghost"
           size="sm"

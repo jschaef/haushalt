@@ -61,6 +61,14 @@ class User(Base):
     token_version: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class AppState(Base):
+    """One-time data migrations that have run (key -> value)."""
+
+    __tablename__ = "app_state"
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(256), default="")
+
+
 class RevokedToken(Base):
     __tablename__ = "revoked_tokens"
     jti: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -68,7 +76,9 @@ class RevokedToken(Base):
 
 
 class Category(Base):
-    """kind: "variable" (shopping, lifestyle) or "fixed" (utilities, rent)."""
+    """kind: "variable" (shopping, lifestyle), "fixed" (utilities, rent) or
+    "income" (salary, child benefit) - only incoming bank bookings use the
+    latter; an incoming booking in a spending category is a refund."""
 
     __tablename__ = "categories"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -330,6 +340,11 @@ DEFAULT_CATEGORIES = [
     ("water", "Wasser", "Water", "fixed", "#3b82f6", "droplet"),
     ("housing", "Wohnen", "Housing", "fixed", "#14b8a6", "house"),
     ("subscriptions", "Abos & Verträge", "Subscriptions", "fixed", "#8b5cf6", "repeat"),
+    ("salary", "Gehalt & Lohn", "Salary & wages", "income", "#15803d", "briefcase"),
+    ("benefits", "Kindergeld & Leistungen", "Child benefit & benefits", "income", "#0f766e", "baby"),
+    ("rent_income", "Mieteinnahmen", "Rental income", "income", "#4d7c0f", "key"),
+    ("interest", "Zinsen & Dividenden", "Interest & dividends", "income", "#a16207", "piggy-bank"),
+    ("other_income", "Sonstige Einnahmen", "Other income", "income", "#475569", "plus"),
 ]
 
 engine = create_engine(
@@ -363,7 +378,27 @@ def init_db() -> None:
         for key, de, en, kind, color, icon in DEFAULT_CATEGORIES:
             if key not in existing:
                 session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
+        _reopen_income(session)
         session.commit()
+
+
+def _reopen_income(session: Session) -> None:
+    """Once: incoming bookings used to be ignored automatically; since income
+    counts (2026-10), those that are no transfer or card debit wait for a
+    decision (income category or refund) like any new one."""
+    if session.get(AppState, "income_v1") is not None:
+        return
+    own = {iban for iban in session.scalars(select(BankAccount.iban)) if iban}
+    for tx in session.scalars(
+        select(BankTransaction).where(
+            BankTransaction.status == "ignored",
+            BankTransaction.amount_cents > 0,
+            BankTransaction.settles_account_id.is_(None),
+        )
+    ):
+        if "".join(tx.iban.split()).upper() not in own:
+            tx.status = "review"
+    session.add(AppState(key="income_v1", value=datetime.now(timezone.utc).isoformat()))
 
 
 # Columns added after the first release. create_all() creates new tables but

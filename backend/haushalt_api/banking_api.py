@@ -205,8 +205,11 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
             raise HTTPException(status_code=422, detail="recurring_id required")
         tx.recurring_id = body.recurring_id
     elif body.status == "counted":
-        if not body.category_id or session.get(Category, body.category_id) is None:
+        category = session.get(Category, body.category_id) if body.category_id else None
+        if category is None:
             raise HTTPException(status_code=422, detail="category_id required")
+        if category.kind == "income" and tx.amount_cents < 0:
+            raise HTTPException(status_code=422, detail="income_category_for_payment")
         tx.category_id = body.category_id
         tx.tags = resolve_tags(session, body.tag_ids)
         banking.learn_counterparty(session, tx)

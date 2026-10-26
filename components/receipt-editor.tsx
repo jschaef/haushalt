@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Category, type Item, type Receipt } from "@/lib/api";
+import { api, spendingCategories, type Category, type Item, type Receipt } from "@/lib/api";
 import { centsToInput, money, parseMoney } from "@/lib/format";
 import { haptic, useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -69,7 +69,7 @@ function CategorySelect({ value, categories, onChange }: { value: number | null;
         aria-label={t("receipt.category")}
       >
         <option value="">{t("receipt.uncategorized")}</option>
-        {byName(categories, (c) => (locale === "de" ? c.name_de : c.name_en), locale).map((c) => (
+        {byName(spendingCategories(categories), (c) => (locale === "de" ? c.name_de : c.name_en), locale).map((c) => (
           <option key={c.id} value={c.id}>
             {locale === "de" ? c.name_de : c.name_en}
           </option>

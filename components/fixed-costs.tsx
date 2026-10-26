@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TagChips, TagFilter, TagPicker } from "@/components/tags";
-import { api, type Category, type Recurring, type RecurringBody, type Tag } from "@/lib/api";
+import { api, spendingCategories, type Category, type Recurring, type RecurringBody, type Tag } from "@/lib/api";
 import { centsToInput, money, parseMoney, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -61,7 +61,7 @@ function CostForm({
 }) {
   const { t } = useI18n();
   const uid = useId();
-  const sorted = useMemo(() => byName(categories, (c) => (locale === "de" ? c.name_de : c.name_en), locale), [categories, locale]);
+  const sorted = useMemo(() => byName(spendingCategories(categories), (c) => (locale === "de" ? c.name_de : c.name_en), locale), [categories, locale]);
   const [name, setName] = useState(initial?.name ?? "");
   const [amount, setAmount] = useState(initial ? centsToInput(initial.amount_cents, locale) : "");
   const [categoryId, setCategoryId] = useState<number | null>(

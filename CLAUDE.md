@@ -103,6 +103,16 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   card statement, booked -14..+3 days around its date, is `ignored` with
   `settles_account_id` (badge "Kartenabrechnung"), also when the card
   statement is imported after it (`settle_cards`).
+- Income (Jochen, 2026-10-26): categories of kind `income` (seeded:
+  salary, benefits, rent_income, interest, other_income) only for incoming
+  bookings; an incoming booking counted in a spending category is a refund
+  and lowers that category. Incoming money waits in `review` (learned per
+  payer like spending; an income rule never counts a payment, 422 on
+  PATCH). `stats.summary` adds income, balance, savings rate, open review
+  sums and `monthly`; dashboard tile "Einnahmen und Ausgaben" + monthly
+  chart. Spending selects use `spendingCategories()`. One-time migration
+  `db._reopen_income` (marker in `app_state`) moved old ignored incoming
+  bookings back to review.
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,
@@ -135,6 +145,8 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 
 ## Pitfalls
 
+- `sr-only` on a `<table>` does not hide its width (tables ignore the 1 px
+  width) and makes the page scroll sideways at 320 px: put it on a wrapper.
 - Hand-written `backdrop-filter` pairs lose their unprefixed half in the CSS
   minifier: use Tailwind `backdrop-*` utilities or the `--tw-backdrop-*` vars.
 - Next.js 16: `proxy.ts` is the middleware. Read `node_modules/next/dist/docs/`.

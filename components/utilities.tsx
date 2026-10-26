@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   api,
+  spendingCategories,
   type Category,
   type Meter,
   type MeterPhotoResult,
@@ -122,7 +123,7 @@ function MeterForm({
 }) {
   const { t, locale } = useI18n();
   const uid = useId();
-  const sorted = useMemo(() => byName(categories, (c) => (locale === "de" ? c.name_de : c.name_en), locale), [categories, locale]);
+  const sorted = useMemo(() => byName(spendingCategories(categories), (c) => (locale === "de" ? c.name_de : c.name_en), locale), [categories, locale]);
   const categoryFor = (kind: UtilityKind) => categories.find((c) => c.key === kind)?.id ?? null;
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<UtilityKind>(initial?.kind ?? "electricity");

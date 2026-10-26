@@ -6,10 +6,14 @@ export type Category = {
   key: string;
   name_de: string;
   name_en: string;
-  kind: "variable" | "fixed";
+  // income: only for incoming bank bookings (salary, child benefit)
+  kind: "variable" | "fixed" | "income";
   color: string;
   icon: string;
 };
+
+// receipts, fixed costs and payments never use an income category
+export const spendingCategories = <T extends Pick<Category, "kind">>(list: T[]): T[] => list.filter((c) => c.kind !== "income");
 
 export type Item = {
   id?: number | null;
@@ -51,6 +55,15 @@ export type Summary = {
   variable_cents: number;
   fixed_cents: number;
   previous_total_cents: number;
+  // counted incoming bookings in an income category (refunds lower spending)
+  income_cents: number;
+  // income minus spending: saved, or still on the accounts
+  balance_cents: number;
+  savings_rate: number | null;
+  // bookings still waiting for review count nowhere yet
+  open: { count: number; out_cents: number; in_cents: number };
+  by_income: { key: string; name_de: string; name_en: string; color: string; cents: number }[];
+  monthly: { month: string; income_cents: number; spending_cents: number }[];
   average: { total: Averages; variable: Averages; fixed: Averages };
   by_category: { key: string; name_de: string; name_en: string; color: string; kind: string; cents: number }[];
   // tags overlap: no shares, every tag counts the full amount

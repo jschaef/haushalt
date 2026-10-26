@@ -2,7 +2,7 @@
 
 import { useTheme } from "next-themes";
 import Link from "next/link";
-import { useCallback, useMemo, useState , type CSSProperties } from "react";
+import { useCallback, useMemo, useState, type CSSProperties } from "react";
 import { ArrowDownRight, ArrowUpRight, Camera, CheckCircle2, ChevronRight, Upload } from "lucide-react";
 import { AnimatedNumber } from "@/components/animated-number";
 import { BentoGrid, Tile } from "@/components/bento";
@@ -117,6 +117,10 @@ export function Dashboard() {
 
           <ReviewTile index={5} count={drafts.data?.length ?? 0} />
 
+          <Tile index={5} title={t("cash.title")} className="col-span-2 @container" testId="tile-cashflow">
+            <Cashflow summary={s} fmt={fmt} />
+          </Tile>
+
           {bankCount > 0 && (
             <Tile index={6} title={t("bank.dashTitle")} testId="tile-bank">
               <Link href="/bank" className="group flex flex-1 flex-col justify-between gap-2">
@@ -146,6 +150,12 @@ export function Dashboard() {
           <Tile index={7} title={t("dash.daily")} className="col-span-2 md:col-span-4 xl:col-span-4">
             <DailyChart summary={s} />
           </Tile>
+
+          {s.monthly.length > 1 && (
+            <Tile index={7} title={t("cash.monthly")} className="col-span-2 md:col-span-4 xl:col-span-4" testId="tile-monthly">
+              <MonthlyChart summary={s} />
+            </Tile>
+          )}
 
           <Tile index={8} title={t("dash.categories")} className="col-span-2 row-span-2">
             <CategoryBreakdown summary={s} />
@@ -202,6 +212,115 @@ function AverageTile({ index, label, value, fmt, testId }: { index: number; labe
     <Tile index={index} title={label} testId={testId} className="@container justify-between">
       <AnimatedNumber value={value} format={fmt} className="tabular whitespace-nowrap font-semibold tracking-tight" style={fitAmount(fmt(value))} />
     </Tile>
+  );
+}
+
+// income against spending in the period; open bookings are shown apart, so
+// an incomplete month does not look like overspending (or like savings)
+function Cashflow({ summary: s, fmt }: { summary: Summary; fmt: (v: number) => string }) {
+  const { t, locale } = useI18n();
+  const signed = (cents: number) => (cents > 0 ? `+${fmt(cents)}` : fmt(cents));
+  return (
+    <div className="flex flex-1 flex-col justify-between gap-3">
+      <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
+        <dt className="text-muted-foreground">{t("cash.income")}</dt>
+        <dd className="tabular text-right font-medium text-positive" data-testid="cash-income">
+          {signed(s.income_cents)}
+        </dd>
+        <dt className="text-muted-foreground">{t("cash.spending")}</dt>
+        <dd className="tabular text-right font-medium" data-testid="cash-spending">
+          {fmt(-s.total_cents)}
+        </dd>
+        <dt className="border-t border-border/60 pt-1 font-medium">{t("cash.balance")}</dt>
+        <dd
+          className={cn("tabular border-t border-border/60 pt-1 text-right font-semibold", s.balance_cents < 0 ? "text-negative" : "text-positive")}
+          data-testid="cash-balance"
+        >
+          {signed(s.balance_cents)}
+        </dd>
+        {s.savings_rate !== null && (
+          <>
+            <dt className="text-muted-foreground">{t("cash.rate")}</dt>
+            <dd className="tabular text-right" data-testid="cash-rate">
+              {new Intl.NumberFormat(locale === "de" ? "de-DE" : "en-GB", { style: "percent", maximumFractionDigits: 0 }).format(s.savings_rate)}
+            </dd>
+          </>
+        )}
+      </dl>
+      {s.open.count > 0 ? (
+        <Link href="/bank" className="group flex items-start gap-1 text-xs text-muted-foreground hover:text-foreground" data-testid="cash-open">
+          <span>
+            {t("cash.open", { n: s.open.count, out: fmt(s.open.out_cents), in: fmt(s.open.in_cents) })}
+          </span>
+          <ChevronRight className="mt-0.5 size-3 shrink-0" />
+        </Link>
+      ) : (
+        s.income_cents === 0 && <p className="text-xs text-muted-foreground">{t("cash.noIncome")}</p>
+      )}
+    </div>
+  );
+}
+
+function MonthlyChart({ summary }: { summary: Summary }) {
+  const { t, locale } = useI18n();
+  const { resolvedTheme } = useTheme();
+  // two clearly different solid colors in every theme (WCAG 1.4.11)
+  const [incomeColor, spendingColor] =
+    resolvedTheme === "contrast" ? ["#ffe600", "#ffffff"] : resolvedTheme === "contrast-light" ? ["#0033a0", "#000000"] : ["#16a34a", "#8b7dff"];
+  const option = useMemo<ChartOption>(() => {
+    const tag = locale === "de" ? "de-DE" : "en-GB";
+    const label = new Intl.DateTimeFormat(tag, { month: "short", year: "2-digit" });
+    return {
+      grid: { left: 8, right: 8, top: 10, bottom: 4, containLabel: true },
+      tooltip: { trigger: "axis", valueFormatter: (v: unknown) => money(Number(v) * 100, locale) },
+      xAxis: {
+        type: "category",
+        data: summary.monthly.map((m) => label.format(new Date(`${m.month}-15T12:00:00`))),
+        axisTick: { show: false },
+        axisLine: { show: false },
+      },
+      yAxis: { type: "value", splitLine: { lineStyle: { opacity: 0.15 } }, axisLabel: { formatter: (v: number) => `${v} €` } },
+      series: [
+        { name: t("cash.income"), type: "bar", data: summary.monthly.map((m) => m.income_cents / 100), itemStyle: { color: incomeColor, borderRadius: [4, 4, 0, 0] }, barMaxWidth: 16 },
+        { name: t("cash.spending"), type: "bar", data: summary.monthly.map((m) => m.spending_cents / 100), itemStyle: { color: spendingColor, borderRadius: [4, 4, 0, 0] }, barMaxWidth: 16 },
+      ],
+    };
+  }, [summary, locale, t, incomeColor, spendingColor]);
+  return (
+    <div className="space-y-2">
+      <Chart option={option} className="h-56 w-full" label={t("cash.monthly")} />
+      {/* the numbers behind the bars for screen readers (WCAG 1.1.1); sr-only
+          sits on a div: a table ignores the 1 px width and widens the page */}
+      <div className="sr-only">
+        <table>
+          <caption>{t("cash.monthly")}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{t("cash.month")}</th>
+              <th scope="col">{t("cash.income")}</th>
+              <th scope="col">{t("cash.spending")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.monthly.map((m) => (
+              <tr key={m.month}>
+                <th scope="row">{m.month}</th>
+                <td>{money(m.income_cents, locale)}</td>
+                <td>{money(m.spending_cents, locale)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm ring-1 ring-foreground/40" style={{ background: incomeColor }} aria-hidden /> {t("cash.income")}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="size-2.5 rounded-sm ring-1 ring-foreground/40" style={{ background: spendingColor }} aria-hidden /> {t("cash.spending")}
+        </span>
+      </div>
+    </div>
   );
 }
 

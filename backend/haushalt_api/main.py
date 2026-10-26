@@ -136,7 +136,7 @@ class CategoryIn(BaseModel):
     key: str = Field(min_length=2, max_length=48, pattern=r"^[a-z0-9_]+$")
     name_de: str = Field(min_length=1, max_length=64)
     name_en: str = Field(min_length=1, max_length=64)
-    kind: str = Field(default="variable", pattern=r"^(variable|fixed)$")
+    kind: str = Field(default="variable", pattern=r"^(variable|fixed|income)$")
     color: str = Field(default="#64748b", pattern=r"^#[0-9a-fA-F]{6}$")
     icon: str = Field(default="tag", max_length=32)
 
