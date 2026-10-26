@@ -255,6 +255,11 @@ function Cashflow({ summary: s, fmt }: { summary: Summary; fmt: (v: number) => s
           </>
         )}
       </dl>
+      {s.one_off.count > 0 && (
+        <p className="text-xs text-muted-foreground" data-testid="cash-one-off">
+          {t("cash.oneOff", { in: signed(s.one_off.in_cents), out: fmt(-s.one_off.out_cents) })}
+        </p>
+      )}
       {s.open.count > 0 ? (
         <Link href="/bank" className="group flex items-start gap-1 text-xs text-muted-foreground hover:text-foreground" data-testid="cash-open">
           <span>

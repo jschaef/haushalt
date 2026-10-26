@@ -7,7 +7,10 @@ Matching rules for money going out, in this order:
    no other booking yet. Taken automatically when exactly one candidate
    has a store name found in the booking text, or when there is exactly one
    candidate at all and the store is unknown; otherwise left for review.
-2. fixed: exactly one recurring cost running on that day with this amount.
+2. fixed: exactly one recurring cost running on that day with this amount,
+   or a recurring cost learned for this counterparty whose amount is within
+   RECURRING_TOLERANCE (the closest one if it pays several). Before or after
+   that cost's period the booking counts by itself in the cost's category.
 3. counted: a category learned from earlier decisions for this counterparty.
 Money coming in is counted the same way through a learned category: an
 income category (salary) makes it income, a spending category makes it a
@@ -33,11 +36,13 @@ from defusedxml import ElementTree
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankAccount, BankTransaction, Category, CategoryRule, Receipt, RecurringCost, Tag, TagRule
+from .db import BankAccount, BankTransaction, Category, CategoryRule, Receipt, RecurringCost, RecurringRule, Tag, TagRule
 from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
 MATCH_DAYS = 3
+# a learned recurring cost takes a booking up to this far off its amount
+RECURRING_TOLERANCE = 0.2
 # a card statement is debited this many days before/after its date
 SETTLEMENT_DAYS = (3, 14)
 RULE_PREFIX = "bank:"
@@ -439,12 +444,17 @@ def store_in_text(receipt: Receipt, tx: BankTransaction) -> bool:
     return bool(store) and all(f" {word}" in haystack for word in store.split())
 
 
-def match(session: Session, tx: BankTransaction, own: set[str] | None = None) -> None:
-    """Sets status and link of an undecided booking (see module docstring)."""
+def has_cards(session: Session) -> bool:
+    return session.scalar(select(BankAccount.id).where(BankAccount.card_number != "").limit(1)) is not None
+
+
+def match(session: Session, tx: BankTransaction, own: set[str] | None = None, cards: bool = True) -> None:
+    """Sets status and link of an undecided booking (see module docstring).
+    cards=False skips the card statement check (no card account exists)."""
     if is_transfer(tx, own_ibans(session) if own is None else own):
         tx.status = "ignored"
         return
-    card_account = card_settlement(session, tx)
+    card_account = card_settlement(session, tx) if cards else None
     if card_account is not None:
         tx.status, tx.settles_account_id = "ignored", card_account
         return
@@ -467,7 +477,47 @@ def match(session: Session, tx: BankTransaction, own: set[str] | None = None) ->
     if len(recurring) == 1:
         tx.status, tx.recurring_id = "fixed", recurring[0].id
         return
+    if apply_recurring_rule(session, tx):
+        return
     apply_rule(session, tx)
+
+
+def apply_recurring_rule(session: Session, tx: BankTransaction) -> bool:
+    """A recurring cost a person linked this counterparty to before."""
+    if not tx.counterparty:
+        return False
+    learned = session.scalars(
+        select(RecurringCost)
+        .join(RecurringRule, RecurringRule.recurring_id == RecurringCost.id)
+        .where(RecurringRule.pattern == counterparty_pattern(tx))
+    ).all()
+    amount = -tx.amount_cents
+    close = [c for c in learned if abs(amount - c.amount_cents) <= RECURRING_TOLERANCE * c.amount_cents]
+    if not close:
+        return False
+    day = Period(tx.booked_on, tx.booked_on)
+    running = [c for c in close if overlap_days(c.start_on, c.end_on, day)]
+    cost = min(running or close, key=lambda c: abs(amount - c.amount_cents))
+    if running:
+        tx.status, tx.recurring_id = "fixed", cost.id
+    else:
+        # the cost does not cover that day (older history): count it by itself
+        tx.status, tx.category_id = "counted", cost.category_id or _other_category(session)
+        tx.tags = list(cost.tags)
+    return True
+
+
+def _other_category(session: Session) -> int | None:
+    return session.scalar(select(Category.id).where(Category.key == "other"))
+
+
+def learn_recurring(session: Session, tx: BankTransaction) -> None:
+    """Remembers that this counterparty pays the booking's recurring cost."""
+    if not tx.counterparty or tx.recurring_id is None:
+        return
+    pattern = counterparty_pattern(tx)
+    if session.get(RecurringRule, (pattern, tx.recurring_id)) is None:
+        session.add(RecurringRule(pattern=pattern, recurring_id=tx.recurring_id))
 
 
 def apply_rule(session: Session, tx: BankTransaction) -> None:
@@ -581,12 +631,41 @@ def settle_cards(session: Session) -> int:
     return changed
 
 
+def rematch_later() -> None:
+    """rematch() in an own session, for a background task after a response:
+    saving a fixed cost should not wait for thousands of bookings."""
+    from .db import SessionLocal
+
+    with SessionLocal() as session:
+        rematch(session)
+
+
+def _decision(tx: BankTransaction) -> tuple:
+    return (tx.status, tx.receipt_id, tx.recurring_id, tx.category_id, tx.settles_account_id, tuple(t.id for t in tx.tags))
+
+
 def rematch(session: Session) -> int:
-    """Try again for bookings still in review, e.g. after new receipts."""
+    """Matches again what waits for review and what the app decided by
+    itself (after new receipts, fixed costs, rules or accounts); what no
+    longer fits goes back to review. A person's decisions stay. Returns the
+    number of bookings whose decision changed."""
     changed = 0
     own = own_ibans(session)
-    for tx in session.scalars(select(BankTransaction).where(BankTransaction.status == "review")):
-        match(session, tx, own)
-        changed += tx.status != "review"
+    cards = has_cards(session)
+    bookings = session.scalars(
+        select(BankTransaction).where((BankTransaction.status == "review") | (BankTransaction.decided_by == "auto"))
+    ).all()
+    # flushing before every query of every booking made this slow (measured:
+    # 2000 bookings 5.4 s); only a freed receipt must reach the database first
+    with session.no_autoflush:
+        for tx in bookings:
+            before = _decision(tx)
+            held_receipt = tx.receipt_id is not None
+            tx.status, tx.receipt_id, tx.recurring_id, tx.category_id, tx.settles_account_id = "review", None, None, None, None
+            tx.tags = []
+            if held_receipt:
+                session.flush()
+            match(session, tx, own, cards)
+            changed += _decision(tx) != before
     session.commit()
     return changed

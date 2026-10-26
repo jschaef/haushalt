@@ -63,12 +63,14 @@ function DecisionPanel({
   tags,
   onTagCreated,
   onDecide,
+  onOneOff,
   onDelete,
 }: {
   booking: BankTransaction;
   categories: Category[];
   recurring: Recurring[];
   onDecide: (decision: BookingDecision) => Promise<void>;
+  onOneOff: (oneOff: boolean) => Promise<void>;
   onDelete: () => void;
 } & TagProps) {
   const { t, locale } = useI18n();
@@ -92,6 +94,15 @@ function DecisionPanel({
     setBusy(true);
     try {
       await onDecide(decision);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleOneOff() {
+    setBusy(true);
+    try {
+      await onOneOff(!booking.one_off);
     } finally {
       setBusy(false);
     }
@@ -151,6 +162,7 @@ function DecisionPanel({
                 </Button>
               </div>
             )}
+            {recurring.length > 0 && <p className="text-xs text-muted-foreground">{t("bank.fixedHint")}</p>}
           </section>
         </>
       )}
@@ -182,6 +194,15 @@ function DecisionPanel({
         <TagPicker tags={tags} selected={tagIds} onChange={setTagIds} onCreated={onTagCreated} />
       </section>
 
+      {(booking.status === "review" || booking.status === "counted" || booking.one_off) && (
+        <section className="space-y-1">
+          <Button size="sm" variant="outline" aria-pressed={booking.one_off} disabled={busy} onClick={() => void toggleOneOff()} data-testid="one-off-toggle">
+            {booking.one_off ? t("bank.oneOffUnmark") : t("bank.oneOffMark")}
+          </Button>
+          <p className="text-xs text-muted-foreground">{t("bank.oneOffHint")}</p>
+        </section>
+      )}
+
       <section className="flex flex-wrap items-end gap-2">
         {booking.status !== "ignored" && (
           <Button size="sm" variant="outline" disabled={busy} onClick={() => decide({ status: "ignored" })}>
@@ -209,7 +230,9 @@ function BookingRow({
   ownIbans,
   tags,
   onTagCreated,
+  oneOffThreshold,
   onDecide,
+  onOneOff,
   onDelete,
 }: {
   booking: BankTransaction;
@@ -217,7 +240,10 @@ function BookingRow({
   recurring: Recurring[];
   accounts: BankAccount[];
   ownIbans: Set<string>;
+  // 0: no suggestions
+  oneOffThreshold: number;
   onDecide: (decision: BookingDecision) => Promise<void>;
+  onOneOff: (oneOff: boolean) => Promise<void>;
   onDelete: () => void;
 } & TagProps) {
   const { t, locale } = useI18n();
@@ -228,6 +254,12 @@ function BookingRow({
   const account = accounts.find((a) => a.id === booking.account_id);
   // money moved between two own accounts: ignored, it is no spending
   const transfer = booking.status === "ignored" && booking.iban !== "" && ownIbans.has(ibanKey(booking.iban));
+  // a large amount may be a one-off; only a person marks it
+  const suggestOneOff =
+    !booking.one_off &&
+    oneOffThreshold > 0 &&
+    Math.abs(booking.amount_cents) >= oneOffThreshold &&
+    (booking.status === "review" || booking.status === "counted");
 
   return (
     <li className="glass rounded-2xl p-3" data-testid="booking-row">
@@ -262,8 +294,21 @@ function BookingRow({
           <Badge className={BADGE_CLASS[booking.status]}>
             {booking.settles_account_id !== null ? t("bank.settlement") : transfer ? t("bank.transfer") : t(`bank.${booking.status}`)}
           </Badge>
+          {booking.one_off && (
+            <Badge variant="outline" data-testid="one-off-badge">
+              {t("bank.oneOff")}
+            </Badge>
+          )}
         </div>
       </div>
+      {suggestOneOff && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 pl-12 text-xs text-muted-foreground" data-testid="one-off-suggestion">
+          <span>{t("bank.oneOffSuggest")}</span>
+          <Button size="sm" variant="outline" onClick={() => void onOneOff(true)}>
+            {t("bank.oneOffMark")}
+          </Button>
+        </div>
+      )}
       {(booking.status === "receipt" || booking.status === "fixed" || booking.status === "counted") && (
         <div className="mt-2 pl-12 text-xs text-muted-foreground">
           {booking.status === "receipt" && booking.receipt_id !== null && (
@@ -294,6 +339,7 @@ function BookingRow({
             tags={tags}
             onTagCreated={onTagCreated}
             onDecide={onDecide}
+            onOneOff={onOneOff}
             onDelete={onDelete}
           />
         )}
@@ -313,6 +359,7 @@ export function Bank() {
   const recurring = useData(() => api.recurring(), "recurring");
   const tagList = useData(() => api.tags(), "tags");
   const accountList = useData(() => api.accounts(), "accounts");
+  const bankSettings = useData(() => api.bankSettings(), "bank-settings");
   const [tagFilter, setTagFilter] = useState<number | null>(null);
   const [accountFilter, setAccountFilter] = useState<number | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("date_desc");
@@ -394,6 +441,16 @@ export function Bank() {
       bookings.setData((list) => list?.map((b) => (b.id === updated.id ? updated : b)) ?? null);
       toast.success(t("bank.decided"));
       void bookings.reload();
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  }
+
+  async function markOneOff(booking: BankTransaction, oneOff: boolean) {
+    try {
+      const updated = await api.markOneOff(booking.id, oneOff);
+      bookings.setData((list) => list?.map((b) => (b.id === updated.id ? updated : b)) ?? null);
+      toast.success(oneOff ? t("bank.oneOffMarked") : t("bank.oneOffUnmarked"));
     } catch (error) {
       toast.error((error as Error).message);
     }
@@ -561,7 +618,9 @@ export function Bank() {
               ownIbans={ownIbans}
               tags={tags}
               onTagCreated={addTag}
+              oneOffThreshold={bankSettings.data?.one_off_threshold_cents ?? 0}
               onDecide={(decision) => decide(booking, decision)}
+              onOneOff={(oneOff) => markOneOff(booking, oneOff)}
               onDelete={() => void remove(booking)}
             />
           ))}

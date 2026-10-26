@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from . import banking, config
 from .auth import current_user
-from .db import BankAccount, BankTransaction, Category, Receipt, RecurringCost, get_session
+from .db import AppState, BankAccount, BankTransaction, Category, Receipt, RecurringCost, get_session
 from .tags_api import resolve_tags
 
 router = APIRouter(prefix="/api/v1/bank", dependencies=[Depends(current_user)])
@@ -30,6 +30,8 @@ class TransactionOut(BaseModel):
     recurring_id: int | None
     category_id: int | None
     settles_account_id: int | None
+    decided_by: str
+    one_off: bool
     tag_ids: list[int]
 
 
@@ -208,6 +210,7 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
         if not body.recurring_id or session.get(RecurringCost, body.recurring_id) is None:
             raise HTTPException(status_code=422, detail="recurring_id required")
         tx.recurring_id = body.recurring_id
+        banking.learn_recurring(session, tx)
     elif body.status == "counted":
         category = session.get(Category, body.category_id) if body.category_id else None
         if category is None:
@@ -218,8 +221,47 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
         tx.tags = resolve_tags(session, body.tag_ids)
         banking.learn_counterparty(session, tx)
     tx.status = body.status
+    # back to review hands the booking to the matching again
+    tx.decided_by = "auto" if body.status == "review" else "person"
     session.commit()
     return _out(tx)
+
+
+class OneOffPatch(BaseModel):
+    one_off: bool
+
+
+@router.put("/transactions/{tx_id}/one-off", response_model=TransactionOut)
+def mark_one_off(tx_id: int, body: OneOffPatch, session: Session = Depends(get_session)):
+    """Only a person marks one-offs; the matching never changes the flag."""
+    tx = _transaction(session, tx_id)
+    tx.one_off = body.one_off
+    session.commit()
+    return _out(tx)
+
+
+ONE_OFF_KEY = "one_off_threshold_cents"
+DEFAULT_ONE_OFF_THRESHOLD = 100_000  # 1,000 euro
+
+
+class BankSettings(BaseModel):
+    # bookings from this amount on are suggested as one-offs; 0 suggests none
+    one_off_threshold_cents: int = Field(ge=0, le=100_000_000)
+
+
+@router.get("/settings", response_model=BankSettings)
+def get_settings(session: Session = Depends(get_session)):
+    state = session.get(AppState, ONE_OFF_KEY)
+    return BankSettings(one_off_threshold_cents=int(state.value) if state else DEFAULT_ONE_OFF_THRESHOLD)
+
+
+@router.put("/settings", response_model=BankSettings)
+def put_settings(body: BankSettings, session: Session = Depends(get_session)):
+    state = session.get(AppState, ONE_OFF_KEY) or AppState(key=ONE_OFF_KEY)
+    state.value = str(body.one_off_threshold_cents)
+    session.add(state)
+    session.commit()
+    return body
 
 
 @router.post("/rematch")

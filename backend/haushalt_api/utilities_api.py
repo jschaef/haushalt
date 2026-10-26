@@ -10,9 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from . import config, utilities
+from . import banking, config, utilities
 from .auth import current_user
-from .db import Category, Meter, MeterReading, RecurringCost, Tariff, UtilityBill, get_session
+from .db import Category, Meter, MeterReading, RecurringCost, RecurringRule, Tariff, UtilityBill, get_session
 from .extraction import UTILITY_KINDS, ExtractionError, get_extractor, sniff
 from .receipts import SUFFIX
 from .stats import Period
@@ -321,26 +321,30 @@ def apply_bill(bill_id: int, session: Session = Depends(get_session)):
                 (RecurringCost.end_on.is_(None)) | (RecurringCost.end_on >= today),
             )
         ).all()
-        # the new instalment keeps the tags of the one it replaces
+        # the new instalment keeps the tags and learned payers of the one it replaces
         tags = list(dict.fromkeys(tag for cost in running for tag in cost.tags))
+        payers = set(session.scalars(select(RecurringRule.pattern).where(RecurringRule.recurring_id.in_([c.id for c in running])))) if running else set()
         for cost in running:
             if cost.start_on < today:
                 cost.end_on = today - timedelta(days=1)
             else:  # planned but not started yet: replaced by the bill's amount
                 session.delete(cost)
-        session.add(
-            RecurringCost(
-                name=f"{meter.name} – {bill.provider}".strip(" –") if bill.provider else meter.name,
-                category_id=meter.category_id,
-                amount_cents=bill.new_instalment_cents,
-                interval_months=1,
-                start_on=today,
-                meter_id=meter.id,
-                tags=tags,
-            )
+        instalment = RecurringCost(
+            name=f"{meter.name} – {bill.provider}".strip(" –") if bill.provider else meter.name,
+            category_id=meter.category_id,
+            amount_cents=bill.new_instalment_cents,
+            interval_months=1,
+            start_on=today,
+            meter_id=meter.id,
+            tags=tags,
         )
+        session.add(instalment)
+        session.flush()
+        session.add_all(RecurringRule(pattern=pattern, recurring_id=instalment.id) for pattern in payers)
         applied["instalment"] = True
     session.commit()
+    if applied["instalment"]:
+        banking.rematch(session)  # debits of the new instalment amount
     return applied
 
 

@@ -6,13 +6,13 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import date
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking_api, config, receipts, smartmeter, smartmeter_api, stats, tags_api, utilities_api
+from . import banking, banking_api, config, receipts, smartmeter, smartmeter_api, stats, tags_api, utilities_api
 from .auth import (
     TokenClaims,
     admin_user,
@@ -627,18 +627,26 @@ def list_recurring(_user: User = Depends(current_user), session: Session = Depen
 
 
 @app.post(f"{PREFIX}/recurring", response_model=RecurringOut, status_code=201)
-def create_recurring(body: RecurringIn, _user: User = Depends(current_user), session: Session = Depends(get_session)):
+def create_recurring(
+    body: RecurringIn, background: BackgroundTasks, _user: User = Depends(current_user), session: Session = Depends(get_session)
+):
     check_category(session, body.category_id)
     check_meter(session, body.meter_id)
     cost = RecurringCost(**body.model_dump(exclude={"tag_ids"}), tags=resolve_tags(session, body.tag_ids or []))
     session.add(cost)
     session.commit()
+    # bookings the app decided by itself may belong to this cost now
+    background.add_task(banking.rematch_later)
     return recurring_out(cost)
 
 
 @app.put(f"{PREFIX}/recurring/{{cost_id}}", response_model=RecurringOut)
 def update_recurring(
-    cost_id: int, body: RecurringIn, _user: User = Depends(current_user), session: Session = Depends(get_session)
+    cost_id: int,
+    body: RecurringIn,
+    background: BackgroundTasks,
+    _user: User = Depends(current_user),
+    session: Session = Depends(get_session),
 ):
     cost = session.get(RecurringCost, cost_id)
     if cost is None:
@@ -650,17 +658,21 @@ def update_recurring(
     if body.tag_ids is not None:
         cost.tags = resolve_tags(session, body.tag_ids)
     session.commit()
+    background.add_task(banking.rematch_later)
     return recurring_out(cost)
 
 
 @app.delete(f"{PREFIX}/recurring/{{cost_id}}", status_code=204)
-def delete_recurring(cost_id: int, _user: User = Depends(current_user), session: Session = Depends(get_session)):
+def delete_recurring(
+    cost_id: int, background: BackgroundTasks, _user: User = Depends(current_user), session: Session = Depends(get_session)
+):
     cost = session.get(RecurringCost, cost_id)
     if cost is None:
         raise HTTPException(status_code=404, detail="Recurring cost not found")
     reopen_bookings(session, BankTransaction.recurring_id == cost.id)
     session.delete(cost)
     session.commit()
+    background.add_task(banking.rematch_later)
 
 
 # --- statistics --------------------------------------------------------------

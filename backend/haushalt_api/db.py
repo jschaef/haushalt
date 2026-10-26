@@ -34,6 +34,7 @@ from sqlalchemy.orm import (
 )
 
 from . import config
+from .text import normalize
 
 
 def utcnow() -> datetime:
@@ -62,7 +63,7 @@ class User(Base):
 
 
 class AppState(Base):
-    """One-time data migrations that have run (key -> value)."""
+    """One-time data migrations that have run and household settings (key -> value)."""
 
     __tablename__ = "app_state"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -184,6 +185,15 @@ class TagRule(Base):
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
 
 
+class RecurringRule(Base):
+    """A bank counterparty learned to pay a recurring cost (pattern as in
+    CategoryRule); one counterparty can pay several (gas and electricity)."""
+
+    __tablename__ = "recurring_rules"
+    pattern: Mapped[str] = mapped_column(String(256), primary_key=True)
+    recurring_id: Mapped[int] = mapped_column(ForeignKey("recurring_costs.id", ondelete="CASCADE"), primary_key=True)
+
+
 class RecurringCost(Base):
     """A cost due every interval_months (1 = monthly instalment, 12 = yearly),
     spread evenly over its period in the statistics."""
@@ -294,6 +304,11 @@ class BankTransaction(Base):
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
     # card bookings: the settlement date of their card statement
     statement_on: Mapped[date | None] = mapped_column(Date)
+    # who decided the status: "auto" (matching, re-matched after changes) or
+    # "person" (kept when the app matches again)
+    decided_by: Mapped[str] = mapped_column(String(8), default="auto")
+    # a one-off (a gift, a car): counted apart, outside averages and balance
+    one_off: Mapped[bool] = mapped_column(Boolean, default=False)
     # status ignored: this debit pays the statement of that card account
     settles_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -382,7 +397,22 @@ def init_db() -> None:
             if key not in existing:
                 session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
         _reopen_income(session)
+        _learn_recurring(session)
         session.commit()
+
+
+def _learn_recurring(session: Session) -> None:
+    """Once: bookings a person linked to a recurring cost before this was
+    learned teach their counterparty (as banking.learn_recurring does)."""
+    if session.get(AppState, "recurring_rules_v1") is not None:
+        return
+    seen = set()
+    for tx in session.scalars(select(BankTransaction).where(BankTransaction.status == "fixed", BankTransaction.recurring_id.is_not(None))):
+        key = (("bank:" + normalize(tx.counterparty))[:256], tx.recurring_id)
+        if tx.counterparty and key not in seen:
+            seen.add(key)
+            session.add(RecurringRule(pattern=key[0], recurring_id=key[1]))
+    session.add(AppState(key="recurring_rules_v1", value=datetime.now(timezone.utc).isoformat()))
 
 
 def _reopen_income(session: Session) -> None:
@@ -419,6 +449,9 @@ _LATER_COLUMNS = {
         "account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
         "statement_on": "DATE",
         "settles_account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
+        # bookings decided before this was recorded count as a person's decision
+        "decided_by": "VARCHAR(8) NOT NULL DEFAULT 'person'",
+        "one_off": "BOOLEAN NOT NULL DEFAULT FALSE",
     },
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {
