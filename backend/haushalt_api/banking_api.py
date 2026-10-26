@@ -208,6 +208,7 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
         if not body.recurring_id or session.get(RecurringCost, body.recurring_id) is None:
             raise HTTPException(status_code=422, detail="recurring_id required")
         tx.recurring_id = body.recurring_id
+        banking.learn_recurring(session, tx)
     elif body.status == "counted":
         category = session.get(Category, body.category_id) if body.category_id else None
         if category is None:

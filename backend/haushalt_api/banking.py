@@ -7,7 +7,10 @@ Matching rules for money going out, in this order:
    no other booking yet. Taken automatically when exactly one candidate
    has a store name found in the booking text, or when there is exactly one
    candidate at all and the store is unknown; otherwise left for review.
-2. fixed: exactly one recurring cost running on that day with this amount.
+2. fixed: exactly one recurring cost running on that day with this amount,
+   or a recurring cost learned for this counterparty whose amount is within
+   RECURRING_TOLERANCE (the closest one if it pays several). Before or after
+   that cost's period the booking counts by itself in the cost's category.
 3. counted: a category learned from earlier decisions for this counterparty.
 Money coming in is counted the same way through a learned category: an
 income category (salary) makes it income, a spending category makes it a
@@ -33,11 +36,13 @@ from defusedxml import ElementTree
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankAccount, BankTransaction, Category, CategoryRule, Receipt, RecurringCost, Tag, TagRule
+from .db import BankAccount, BankTransaction, Category, CategoryRule, Receipt, RecurringCost, RecurringRule, Tag, TagRule
 from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
 MATCH_DAYS = 3
+# a learned recurring cost takes a booking up to this far off its amount
+RECURRING_TOLERANCE = 0.2
 # a card statement is debited this many days before/after its date
 SETTLEMENT_DAYS = (3, 14)
 RULE_PREFIX = "bank:"
@@ -467,7 +472,47 @@ def match(session: Session, tx: BankTransaction, own: set[str] | None = None) ->
     if len(recurring) == 1:
         tx.status, tx.recurring_id = "fixed", recurring[0].id
         return
+    if apply_recurring_rule(session, tx):
+        return
     apply_rule(session, tx)
+
+
+def apply_recurring_rule(session: Session, tx: BankTransaction) -> bool:
+    """A recurring cost a person linked this counterparty to before."""
+    if not tx.counterparty:
+        return False
+    learned = session.scalars(
+        select(RecurringCost)
+        .join(RecurringRule, RecurringRule.recurring_id == RecurringCost.id)
+        .where(RecurringRule.pattern == counterparty_pattern(tx))
+    ).all()
+    amount = -tx.amount_cents
+    close = [c for c in learned if abs(amount - c.amount_cents) <= RECURRING_TOLERANCE * c.amount_cents]
+    if not close:
+        return False
+    day = Period(tx.booked_on, tx.booked_on)
+    running = [c for c in close if overlap_days(c.start_on, c.end_on, day)]
+    cost = min(running or close, key=lambda c: abs(amount - c.amount_cents))
+    if running:
+        tx.status, tx.recurring_id = "fixed", cost.id
+    else:
+        # the cost does not cover that day (older history): count it by itself
+        tx.status, tx.category_id = "counted", cost.category_id or _other_category(session)
+        tx.tags = list(cost.tags)
+    return True
+
+
+def _other_category(session: Session) -> int | None:
+    return session.scalar(select(Category.id).where(Category.key == "other"))
+
+
+def learn_recurring(session: Session, tx: BankTransaction) -> None:
+    """Remembers that this counterparty pays the booking's recurring cost."""
+    if not tx.counterparty or tx.recurring_id is None:
+        return
+    pattern = counterparty_pattern(tx)
+    if session.get(RecurringRule, (pattern, tx.recurring_id)) is None:
+        session.add(RecurringRule(pattern=pattern, recurring_id=tx.recurring_id))
 
 
 def apply_rule(session: Session, tx: BankTransaction) -> None:

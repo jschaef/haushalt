@@ -151,6 +151,7 @@ function DecisionPanel({
                 </Button>
               </div>
             )}
+            {recurring.length > 0 && <p className="text-xs text-muted-foreground">{t("bank.fixedHint")}</p>}
           </section>
         </>
       )}

@@ -88,6 +88,12 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   detection by whole words. Booking status decides counting: only `counted`
   enters the statistics (`receipt`/`fixed` are counted through the receipt or
   recurring cost). Deleting those reopens linked bookings.
+- Fixed costs (Jochen, 2026-10-26): linking a booking to a recurring cost
+  is learned per counterparty (`RecurringRule`, several costs per payer);
+  later bookings within ±20 % go to the closest learned cost, bookings
+  outside its period count by themselves in its category. A new instalment
+  from a bill takes over the learned payers. `db._learn_recurring` learned
+  the links made before, once.
 - Own accounts (Jochen, 2026-10-23; `BankAccount`): the statement's IBAN
   (CAMT `Acct`, CSV preamble, checked with mod 97) picks or creates the
   account, a chosen account must match it (409). A booking whose
