@@ -9,9 +9,11 @@ Matching rules for money going out, in this order:
    candidate at all and the store is unknown; otherwise left for review.
 2. fixed: exactly one recurring cost running on that day with this amount.
 3. counted: a category learned from earlier decisions for this counterparty.
-Everything else waits for review. Money coming in is ignored by default, and
-so is every transfer to or from another of the household's own accounts
-(counterparty IBAN = an account's IBAN): otherwise it would count twice.
+Money coming in is counted the same way through a learned category: an
+income category (salary) makes it income, a spending category makes it a
+refund that lowers that category's spending. Everything else waits for
+review. Every transfer to or from another of the household's own accounts
+(counterparty IBAN = an account's IBAN) is ignored: it would count twice.
 
 Credit cards: every card transaction is a booking of the card's own account
 and counts like any other. The monthly debit paying the card statement is
@@ -31,7 +33,7 @@ from defusedxml import ElementTree
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankAccount, BankTransaction, CategoryRule, Receipt, RecurringCost, Tag, TagRule
+from .db import BankAccount, BankTransaction, Category, CategoryRule, Receipt, RecurringCost, Tag, TagRule
 from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
@@ -447,7 +449,7 @@ def match(session: Session, tx: BankTransaction, own: set[str] | None = None) ->
         tx.status, tx.settles_account_id = "ignored", card_account
         return
     if tx.amount_cents >= 0:
-        tx.status = "ignored"
+        apply_rule(session, tx)
         return
     candidates = receipt_candidates(session, tx)
     named = [r for r in candidates if store_in_text(r, tx)]
@@ -465,12 +467,23 @@ def match(session: Session, tx: BankTransaction, own: set[str] | None = None) ->
     if len(recurring) == 1:
         tx.status, tx.recurring_id = "fixed", recurring[0].id
         return
+    apply_rule(session, tx)
+
+
+def apply_rule(session: Session, tx: BankTransaction) -> None:
+    """Counts the booking with the category (and tags) learned for its
+    counterparty. An income category is never used for money going out."""
+    if not tx.counterparty:
+        return
     pattern = counterparty_pattern(tx)
-    rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern)) if tx.counterparty else None
-    if rule is not None:
-        rule.hits += 1
-        tx.status, tx.category_id = "counted", rule.category_id
-        tx.tags = list(session.scalars(select(Tag).join(TagRule, TagRule.tag_id == Tag.id).where(TagRule.pattern == pattern)))
+    rule = session.scalar(select(CategoryRule).where(CategoryRule.pattern == pattern))
+    if rule is None:
+        return
+    if tx.amount_cents < 0 and session.scalar(select(Category.kind).where(Category.id == rule.category_id)) == "income":
+        return
+    rule.hits += 1
+    tx.status, tx.category_id = "counted", rule.category_id
+    tx.tags = list(session.scalars(select(Tag).join(TagRule, TagRule.tag_id == Tag.id).where(TagRule.pattern == pattern)))
 
 
 def is_transfer(tx: BankTransaction, own: set[str]) -> bool:

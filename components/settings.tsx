@@ -358,6 +358,7 @@ function CategoryFields({
         <select id={`${idPrefix}-kind`} value={draft.kind} onChange={(e) => onChange({ kind: e.target.value as Category["kind"] })} className={SELECT_CLASS}>
           <option value="variable">{t("dash.variable")}</option>
           <option value="fixed">{t("dash.fixed")}</option>
+          <option value="income">{t("settings.kindIncome")}</option>
         </select>
       </div>
       <div className="space-y-1.5">
@@ -400,7 +401,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
     }
   }
 
-  const kindLabel = category.kind === "fixed" ? t("dash.fixed") : t("dash.variable");
+  const kindLabel = category.kind === "fixed" ? t("dash.fixed") : category.kind === "income" ? t("settings.kindIncome") : t("dash.variable");
 
   if (!editing) {
     return (
@@ -410,7 +411,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
           <span className="font-medium">{locale === "de" ? category.name_de : category.name_en}</span>
           <span className="ml-2 text-xs text-muted-foreground">{locale === "de" ? category.name_en : category.name_de}</span>
         </span>
-        <Badge variant={category.kind === "fixed" ? "default" : "secondary"}>{kindLabel}</Badge>
+        <Badge variant={category.kind === "fixed" ? "default" : category.kind === "income" ? "outline" : "secondary"}>{kindLabel}</Badge>
         <Button
           variant="ghost"
           size="sm"
@@ -604,6 +605,22 @@ function AccountFields({
         </Label>
         <Input id={`${idPrefix}-bank`} value={draft.bank} maxLength={64} onChange={(e) => onChange({ bank: e.target.value })} />
       </div>
+      {!card && (
+        <div className="min-w-0 space-y-1">
+          <Label htmlFor={`${idPrefix}-kind`} className="text-xs">
+            {t("accounts.kind")}
+          </Label>
+          <select
+            id={`${idPrefix}-kind`}
+            value={draft.kind}
+            onChange={(e) => onChange({ kind: e.target.value as AccountDraft["kind"] })}
+            className={SELECT_CLASS}
+          >
+            <option value="giro">{t("accounts.kindGiro")}</option>
+            <option value="savings">{t("accounts.kindSavings")}</option>
+          </select>
+        </div>
+      )}
       {card ? (
         <div className="min-w-0 space-y-1">
           <div className="text-xs font-medium">{t("accounts.card")}</div>
@@ -645,10 +662,20 @@ function accountError(error: unknown, t: (key: MessageKey) => string): string {
 function AccountRow({ account, onChanged }: { account: BankAccount; onChanged: () => void }) {
   const { t } = useI18n();
   const uid = useId();
-  const [draft, setDraft] = useState<AccountDraft>({ name: account.name, bank: account.bank, iban: account.iban, color: account.color });
+  const [draft, setDraft] = useState<AccountDraft>({
+    name: account.name,
+    bank: account.bank,
+    iban: account.iban,
+    kind: account.kind === "savings" ? "savings" : "giro",
+    color: account.color,
+  });
   const [busy, setBusy] = useState(false);
   const dirty =
-    draft.name.trim() !== account.name || draft.bank.trim() !== account.bank || draft.iban.replace(/\s/g, "").toUpperCase() !== account.iban || draft.color !== account.color;
+    draft.name.trim() !== account.name ||
+    draft.bank.trim() !== account.bank ||
+    draft.iban.replace(/\s/g, "").toUpperCase() !== account.iban ||
+    (account.kind !== "card" && draft.kind !== account.kind) ||
+    draft.color !== account.color;
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -664,7 +691,7 @@ function AccountRow({ account, onChanged }: { account: BankAccount; onChanged: (
 
   return (
     <li className="space-y-2 rounded-xl bg-muted/40 px-3 py-2" data-testid="account-row">
-      <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+      <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_auto_1.4fr_auto]">
         <AccountFields idPrefix={uid} draft={draft} card={account.card_number} onChange={(changes) => setDraft({ ...draft, ...changes })} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -697,7 +724,7 @@ function AccountRow({ account, onChanged }: { account: BankAccount; onChanged: (
 function AccountsTile() {
   const { t } = useI18n();
   const accounts = useData(() => api.accounts(), "accounts");
-  const empty: AccountDraft = { name: "", bank: "", iban: "", color: "#64748b" };
+  const empty: AccountDraft = { name: "", bank: "", iban: "", kind: "giro", color: "#64748b" };
   const [draft, setDraft] = useState<AccountDraft>(empty);
   const [busy, setBusy] = useState(false);
 
@@ -726,13 +753,13 @@ function AccountsTile() {
       ) : (
         <ul className="space-y-1.5">
           {accounts.data.map((account) => (
-            <AccountRow key={`${account.id}:${account.name}:${account.bank}:${account.iban}:${account.color}:${account.bookings}`} account={account} onChanged={() => void accounts.reload()} />
+            <AccountRow key={`${account.id}:${account.name}:${account.bank}:${account.iban}:${account.kind}:${account.color}:${account.bookings}`} account={account} onChanged={() => void accounts.reload()} />
           ))}
         </ul>
       )}
       <form onSubmit={submit} className="space-y-3 border-t pt-3">
         <h3 className="text-sm font-medium">{t("accounts.add")}</h3>
-        <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1.4fr_auto]">
+        <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_auto_1.4fr_auto]">
           <AccountFields idPrefix="account-new" draft={draft} onChange={(changes) => setDraft({ ...draft, ...changes })} />
         </div>
         <Button type="submit" disabled={busy || !draft.name.trim()}>

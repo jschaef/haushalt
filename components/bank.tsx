@@ -17,6 +17,7 @@ import {
   type BookingDecision,
   type BookingStatus,
   type Category,
+  spendingCategories,
   type ReceiptCandidate,
   type Recurring,
   type Tag,
@@ -77,6 +78,15 @@ function DecisionPanel({
   const [categoryId, setCategoryId] = useState<string>(booking.category_id ? String(booking.category_id) : "");
   const [tagIds, setTagIds] = useState<number[]>(booking.tag_ids);
   const [busy, setBusy] = useState(false);
+  // money coming in: an income category, or a spending category for a refund
+  const incoming = booking.amount_cents > 0;
+  const income = byName(categories.filter((c) => c.kind === "income"), (c) => categoryName(c, locale), locale);
+  const spending = byName(spendingCategories(categories), (c) => categoryName(c, locale), locale);
+  const option = (c: Category) => (
+    <option key={c.id} value={c.id}>
+      {categoryName(c, locale)}
+    </option>
+  );
 
   async function decide(decision: BookingDecision) {
     setBusy(true);
@@ -91,65 +101,73 @@ function DecisionPanel({
     // grid-cols-1: without it the single column on phones is as wide as its
     // widest content (a long tag or category name) and runs off the screen
     <div className="mt-3 grid grid-cols-1 gap-4 border-t border-border/60 pt-3 md:grid-cols-2" data-testid="booking-panel">
-      <section className="space-y-2">
-        <h3 className="text-sm font-medium">{t("bank.belongsToReceipt")}</h3>
-        {candidates.loading && !candidates.data ? (
-          <Skeleton className="h-10 rounded-xl" />
-        ) : candidates.data && candidates.data.length > 0 ? (
-          <ul className="space-y-1.5">
-            {candidates.data.map((c) => (
-              <li key={c.id} className="flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm" data-testid="candidate">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="truncate font-medium">{c.store_name || t("receipts.unknownStore")}</span>
-                    {c.store_matches && <Badge variant="secondary">{t("bank.storeMatches")}</Badge>}
-                  </div>
-                  <div className="tabular text-xs text-muted-foreground">
-                    {c.purchased_on ? shortDate(c.purchased_on, locale) : t("receipts.noDate")} · {money(c.total_cents, locale)}
-                  </div>
-                </div>
-                <Button size="sm" variant="outline" disabled={busy} onClick={() => decide({ status: "receipt", receipt_id: c.id })}>
-                  {t("bank.choose")}
+      {/* a receipt or a fixed cost is never paid with money coming in */}
+      {!incoming && (
+        <>
+          <section className="space-y-2">
+            <h3 className="text-sm font-medium">{t("bank.belongsToReceipt")}</h3>
+            {candidates.loading && !candidates.data ? (
+              <Skeleton className="h-10 rounded-xl" />
+            ) : candidates.data && candidates.data.length > 0 ? (
+              <ul className="space-y-1.5">
+                {candidates.data.map((c) => (
+                  <li key={c.id} className="flex items-center gap-2 rounded-xl bg-muted/40 px-3 py-2 text-sm" data-testid="candidate">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="truncate font-medium">{c.store_name || t("receipts.unknownStore")}</span>
+                        {c.store_matches && <Badge variant="secondary">{t("bank.storeMatches")}</Badge>}
+                      </div>
+                      <div className="tabular text-xs text-muted-foreground">
+                        {c.purchased_on ? shortDate(c.purchased_on, locale) : t("receipts.noDate")} · {money(c.total_cents, locale)}
+                      </div>
+                    </div>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => decide({ status: "receipt", receipt_id: c.id })}>
+                      {t("bank.choose")}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-muted-foreground">{candidates.error ? candidates.error.message : t("bank.noCandidates")}</p>
+            )}
+          </section>
+
+          <section className="space-y-2">
+            <Label htmlFor={`${uid}-fixed`}>{t("bank.fixedCost")}</Label>
+            {recurring.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("bank.noFixed")}</p>
+            ) : (
+              <div className="flex gap-2">
+                <select id={`${uid}-fixed`} value={recurringId} onChange={(e) => setRecurringId(e.target.value)} className={SELECT_CLASS}>
+                  <option value="">–</option>
+                  {byName(recurring, (r) => r.name, locale).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                <Button size="sm" variant="outline" disabled={busy || !recurringId} onClick={() => decide({ status: "fixed", recurring_id: Number(recurringId) })}>
+                  {t("bank.assign")}
                 </Button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-muted-foreground">{candidates.error ? candidates.error.message : t("bank.noCandidates")}</p>
-        )}
-      </section>
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
       <section className="space-y-2">
-        <Label htmlFor={`${uid}-fixed`}>{t("bank.fixedCost")}</Label>
-        {recurring.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{t("bank.noFixed")}</p>
-        ) : (
-          <div className="flex gap-2">
-            <select id={`${uid}-fixed`} value={recurringId} onChange={(e) => setRecurringId(e.target.value)} className={SELECT_CLASS}>
-              <option value="">–</option>
-              {byName(recurring, (r) => r.name, locale).map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-            <Button size="sm" variant="outline" disabled={busy || !recurringId} onClick={() => decide({ status: "fixed", recurring_id: Number(recurringId) })}>
-              {t("bank.assign")}
-            </Button>
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-2">
-        <Label htmlFor={`${uid}-category`}>{t("bank.countsItself")}</Label>
+        <Label htmlFor={`${uid}-category`}>{incoming ? t("bank.countsIncoming") : t("bank.countsItself")}</Label>
         <div className="flex gap-2">
           <select id={`${uid}-category`} value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={SELECT_CLASS}>
             <option value="">{t("receipt.uncategorized")}</option>
-            {byName(categories, (c) => categoryName(c, locale), locale).map((c) => (
-              <option key={c.id} value={c.id}>
-                {categoryName(c, locale)}
-              </option>
-            ))}
+            {incoming ? (
+              <>
+                <optgroup label={t("bank.incomeGroup")}>{income.map(option)}</optgroup>
+                <optgroup label={t("bank.refundGroup")}>{spending.map(option)}</optgroup>
+              </>
+            ) : (
+              spending.map(option)
+            )}
           </select>
           <Button
             size="sm"
@@ -160,7 +178,7 @@ function DecisionPanel({
             {t("bank.assign")}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">{t("bank.countsHint")}</p>
+        <p className="text-xs text-muted-foreground">{incoming ? t("bank.countsIncomingHint") : t("bank.countsHint")}</p>
         <TagPicker tags={tags} selected={tagIds} onChange={setTagIds} onCreated={onTagCreated} />
       </section>
 
@@ -258,6 +276,7 @@ function BookingRow({
             <span className="inline-flex items-center gap-1.5">
               <span className="size-2.5 rounded-full" style={{ background: category.color }} aria-hidden />
               {categoryName(category, locale)}
+              {booking.amount_cents > 0 && <span>· {category.kind === "income" ? t("bank.incomeBadge") : t("bank.refund")}</span>}
             </span>
           )}
           {/* a fixed booking shows the tags of its recurring cost */}
