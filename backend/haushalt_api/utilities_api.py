@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
-from . import config, utilities
+from . import banking, config, utilities
 from .auth import current_user
 from .db import Category, Meter, MeterReading, RecurringCost, RecurringRule, Tariff, UtilityBill, get_session
 from .extraction import UTILITY_KINDS, ExtractionError, get_extractor, sniff
@@ -343,6 +343,8 @@ def apply_bill(bill_id: int, session: Session = Depends(get_session)):
         session.add_all(RecurringRule(pattern=pattern, recurring_id=instalment.id) for pattern in payers)
         applied["instalment"] = True
     session.commit()
+    if applied["instalment"]:
+        banking.rematch(session)  # debits of the new instalment amount
     return applied
 
 

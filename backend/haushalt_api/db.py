@@ -304,6 +304,9 @@ class BankTransaction(Base):
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"))
     # card bookings: the settlement date of their card statement
     statement_on: Mapped[date | None] = mapped_column(Date)
+    # who decided the status: "auto" (matching, re-matched after changes) or
+    # "person" (kept when the app matches again)
+    decided_by: Mapped[str] = mapped_column(String(8), default="auto")
     # status ignored: this debit pays the statement of that card account
     settles_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -444,6 +447,8 @@ _LATER_COLUMNS = {
         "account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
         "statement_on": "DATE",
         "settles_account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
+        # bookings decided before this was recorded count as a person's decision
+        "decided_by": "VARCHAR(8) NOT NULL DEFAULT 'person'",
     },
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {

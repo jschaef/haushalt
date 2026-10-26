@@ -30,6 +30,7 @@ class TransactionOut(BaseModel):
     recurring_id: int | None
     category_id: int | None
     settles_account_id: int | None
+    decided_by: str
     tag_ids: list[int]
 
 
@@ -219,6 +220,8 @@ def decide(tx_id: int, body: TransactionPatch, session: Session = Depends(get_se
         tx.tags = resolve_tags(session, body.tag_ids)
         banking.learn_counterparty(session, tx)
     tx.status = body.status
+    # back to review hands the booking to the matching again
+    tx.decided_by = "auto" if body.status == "review" else "person"
     session.commit()
     return _out(tx)
 

@@ -4,7 +4,7 @@ import { bookingCategoryId, bookingYears, filterBookings, sortBookings } from ".
 
 const tx = (id: number, booked_on: string, amount_cents: number, extra: Partial<BankTransaction> = {}): BankTransaction => ({
   id, booked_on, amount_cents, currency: "EUR", counterparty: "", iban: "", purpose: "", status: "review",
-  account_id: null, receipt_id: null, recurring_id: null, category_id: null, settles_account_id: null, tag_ids: [], ...extra,
+  account_id: null, receipt_id: null, recurring_id: null, category_id: null, settles_account_id: null, decided_by: "auto", tag_ids: [], ...extra,
 });
 const cat = (id: number, name_de: string): Category => ({ id, key: `k${id}`, name_de, name_en: name_de, kind: "variable", color: "#000000", icon: "" }) as Category;
 const categories = [cat(1, "Scheune"), cat(2, "Abos"), cat(3, "Lebensmittel")];

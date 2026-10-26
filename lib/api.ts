@@ -184,6 +184,8 @@ export type BankTransaction = {
   category_id: number | null;
   // ignored: this debit pays the statement of that credit card account
   settles_account_id: number | null;
+  // auto: the app decided (matched again after changes), person: kept
+  decided_by: "auto" | "person";
   tag_ids: number[];
 };
 

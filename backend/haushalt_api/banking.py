@@ -444,12 +444,17 @@ def store_in_text(receipt: Receipt, tx: BankTransaction) -> bool:
     return bool(store) and all(f" {word}" in haystack for word in store.split())
 
 
-def match(session: Session, tx: BankTransaction, own: set[str] | None = None) -> None:
-    """Sets status and link of an undecided booking (see module docstring)."""
+def has_cards(session: Session) -> bool:
+    return session.scalar(select(BankAccount.id).where(BankAccount.card_number != "").limit(1)) is not None
+
+
+def match(session: Session, tx: BankTransaction, own: set[str] | None = None, cards: bool = True) -> None:
+    """Sets status and link of an undecided booking (see module docstring).
+    cards=False skips the card statement check (no card account exists)."""
     if is_transfer(tx, own_ibans(session) if own is None else own):
         tx.status = "ignored"
         return
-    card_account = card_settlement(session, tx)
+    card_account = card_settlement(session, tx) if cards else None
     if card_account is not None:
         tx.status, tx.settles_account_id = "ignored", card_account
         return
@@ -626,12 +631,41 @@ def settle_cards(session: Session) -> int:
     return changed
 
 
+def rematch_later() -> None:
+    """rematch() in an own session, for a background task after a response:
+    saving a fixed cost should not wait for thousands of bookings."""
+    from .db import SessionLocal
+
+    with SessionLocal() as session:
+        rematch(session)
+
+
+def _decision(tx: BankTransaction) -> tuple:
+    return (tx.status, tx.receipt_id, tx.recurring_id, tx.category_id, tx.settles_account_id, tuple(t.id for t in tx.tags))
+
+
 def rematch(session: Session) -> int:
-    """Try again for bookings still in review, e.g. after new receipts."""
+    """Matches again what waits for review and what the app decided by
+    itself (after new receipts, fixed costs, rules or accounts); what no
+    longer fits goes back to review. A person's decisions stay. Returns the
+    number of bookings whose decision changed."""
     changed = 0
     own = own_ibans(session)
-    for tx in session.scalars(select(BankTransaction).where(BankTransaction.status == "review")):
-        match(session, tx, own)
-        changed += tx.status != "review"
+    cards = has_cards(session)
+    bookings = session.scalars(
+        select(BankTransaction).where((BankTransaction.status == "review") | (BankTransaction.decided_by == "auto"))
+    ).all()
+    # flushing before every query of every booking made this slow (measured:
+    # 2000 bookings 5.4 s); only a freed receipt must reach the database first
+    with session.no_autoflush:
+        for tx in bookings:
+            before = _decision(tx)
+            held_receipt = tx.receipt_id is not None
+            tx.status, tx.receipt_id, tx.recurring_id, tx.category_id, tx.settles_account_id = "review", None, None, None, None
+            tx.tags = []
+            if held_receipt:
+                session.flush()
+            match(session, tx, own, cards)
+            changed += _decision(tx) != before
     session.commit()
     return changed
