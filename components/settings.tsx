@@ -770,6 +770,61 @@ function AccountsTile() {
   );
 }
 
+function OneOffTile() {
+  const { t } = useI18n();
+  const settings = useData(() => api.bankSettings(), "bank-settings");
+  const [euros, setEuros] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const value = euros ?? (settings.data ? String(settings.data.one_off_threshold_cents / 100) : "");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const saved = await api.saveBankSettings({ one_off_threshold_cents: Math.round(Number(value) * 100) });
+      settings.setData(saved);
+      setEuros(null);
+      toast.success(t("receipt.saved"));
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile index={8} title={t("oneOff.title")} testId="one-off-tile">
+      {!settings.data ? (
+        <Skeleton className="h-28 rounded-xl" />
+      ) : (
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="one-off-threshold">{t("oneOff.threshold")}</Label>
+            <Input
+              id="one-off-threshold"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={1000000}
+              step={1}
+              value={value}
+              onChange={(e) => setEuros(e.target.value)}
+              aria-describedby="one-off-threshold-hint"
+              required
+            />
+            <p id="one-off-threshold-hint" className="text-xs text-muted-foreground">
+              {t("oneOff.hint")}
+            </p>
+          </div>
+          <Button type="submit" disabled={busy || value === ""}>
+            {t("common.save")}
+          </Button>
+        </form>
+      )}
+    </Tile>
+  );
+}
+
 export function Settings() {
   const { t } = useI18n();
   return (
@@ -784,6 +839,7 @@ export function Settings() {
         <CategoriesTile />
         <TagsTile />
         <AccountsTile />
+        <OneOffTile />
       </div>
     </div>
   );

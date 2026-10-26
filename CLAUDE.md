@@ -128,6 +128,12 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   transfers to savings accounts, counted on the giro side; a savings-side
   booking counts only without a mirror booking (same amount, within 3
   days). Shown as "davon aufs Sparkonto" under the balance.
+- One-offs (Jochen, 2026-10-26): a person marks a booking `one_off`
+  (gift, car; the matching never sets or clears it). Counted and review
+  one-offs enter no category, average, chart, balance, savings rate, open
+  sums or `saved_cents`; `summary.one_off` reports their sums in and out
+  (tile line "Einmalig"). The bank page suggests amounts from the
+  threshold in `app_state` (`/bank/settings`, default 1,000 €, 0 = off).
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,

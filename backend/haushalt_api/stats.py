@@ -10,6 +10,10 @@ booking counted in a spending category is a refund and lowers that
 category. Bookings still waiting for review count nowhere; their sums are
 reported apart, so a gap in the comparison stays visible.
 
+One-offs: bookings a person marked as one-off (a gift, a car) count in no
+category, average, balance or chart; their sums in and out are reported
+apart. That covers the ones still waiting for review too.
+
 Saved: money moved to an own savings account (and back). The giro side of
 a transfer counts; a booking on the savings account counts only when the
 statement of the other account is not imported (no mirror booking).
@@ -110,13 +114,20 @@ def _period_totals(session: Session, period: Period, categories: dict[int, Categ
     # bank bookings that count on their own (no receipt, no recurring cost):
     # spending, refunds (incoming, spending category: negative spending) and income
     by_income: dict[str, float] = defaultdict(float)
+    one_off = {"in_cents": 0, "out_cents": 0, "count": 0}
     bookings = session.scalars(
         select(BankTransaction).where(
-            BankTransaction.status == "counted",
+            BankTransaction.status.in_(("counted", "review")),
             BankTransaction.booked_on.between(period.start, period.end),
         )
     ).all()
     for booking in bookings:
+        if booking.one_off:
+            one_off["in_cents" if booking.amount_cents > 0 else "out_cents"] += abs(booking.amount_cents)
+            one_off["count"] += 1
+            continue
+        if booking.status != "counted":
+            continue
         cents = -booking.amount_cents
         category = categories.get(booking.category_id) if booking.category_id else None
         if category is not None and category.kind == "income":
@@ -144,6 +155,7 @@ def _period_totals(session: Session, period: Period, categories: dict[int, Categ
         "by_tag": by_tag,
         "by_store": by_store,
         "daily": daily,
+        "one_off": one_off,
         "receipt_count": len(receipts),
     }
 
@@ -152,7 +164,9 @@ def _open_bookings(session: Session, period: Period) -> dict:
     """Bookings waiting for review: they are neither spending nor income yet."""
     rows = session.execute(
         select(BankTransaction.amount_cents).where(
-            BankTransaction.status == "review", BankTransaction.booked_on.between(period.start, period.end)
+            BankTransaction.status == "review",
+            BankTransaction.one_off.is_(False),
+            BankTransaction.booked_on.between(period.start, period.end),
         )
     ).scalars().all()
     return {
@@ -175,6 +189,8 @@ def _saved(session: Session, period: Period) -> int:
     transfers = session.scalars(
         select(BankTransaction).where(
             BankTransaction.status == "ignored",
+            # moving a one-off (a gift) to savings is no part of the balance
+            BankTransaction.one_off.is_(False),
             BankTransaction.iban != "",
             BankTransaction.booked_on.between(period.start, period.end),
         )
@@ -259,6 +275,7 @@ def summary(session: Session, period: Period) -> dict:
         # part of the balance moved to own savings accounts
         "saved_cents": _saved(session, period),
         "open": _open_bookings(session, period),
+        "one_off": current["one_off"],
         "by_income": sorted(
             (
                 {

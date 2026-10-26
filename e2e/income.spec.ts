@@ -82,3 +82,29 @@ test("a transfer to a savings account shows as saved", async ({ page }, info) =>
   await page.goto("/dashboard");
   await expect(page.getByTestId("cash-saved")).toBeVisible();
 });
+
+test("a large booking is suggested as one-off and then counts apart", async ({ page }, info) => {
+  const payer = `Tante ${info.project.name} ${Date.now()}`;
+  await login(page);
+  const oneOff = async () =>
+    page.evaluate(async () => (await (await fetch("/api/v1/stats/summary?range=30d")).json()).one_off.in_cents as number);
+  const before = await oneOff();
+
+  await page.goto("/bank");
+  await page.getByTestId("statement-input").setInputFiles(statement([[payer, "Geschenk", "5000,00"]]));
+  await expect(toast(page, "success")).toBeVisible();
+  const row = page.getByTestId("booking-row").filter({ hasText: payer });
+  // above the default threshold (1.000 €): suggested, never marked by the app
+  await expect(row.getByTestId("one-off-badge")).toHaveCount(0);
+  await row.getByTestId("one-off-suggestion").getByRole("button", { name: "Als einmalig markieren" }).click();
+  await expect(toast(page, "success").filter({ hasText: "Als einmalig markiert" })).toBeVisible();
+  await expect(row.getByTestId("one-off-badge")).toBeVisible();
+  await expect(row.getByTestId("one-off-suggestion")).toHaveCount(0);
+  expect(await oneOff()).toBe(before + 500000);
+
+  await page.goto("/dashboard");
+  await expect(page.getByTestId("cash-one-off")).toContainText("Einmalig");
+
+  await page.goto("/settings");
+  await expect(page.getByTestId("one-off-tile").getByLabel("Vorschlag ab Betrag (€)")).toHaveValue("1000");
+});

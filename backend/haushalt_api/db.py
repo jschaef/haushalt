@@ -63,7 +63,7 @@ class User(Base):
 
 
 class AppState(Base):
-    """One-time data migrations that have run (key -> value)."""
+    """One-time data migrations that have run and household settings (key -> value)."""
 
     __tablename__ = "app_state"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -307,6 +307,8 @@ class BankTransaction(Base):
     # who decided the status: "auto" (matching, re-matched after changes) or
     # "person" (kept when the app matches again)
     decided_by: Mapped[str] = mapped_column(String(8), default="auto")
+    # a one-off (a gift, a car): counted apart, outside averages and balance
+    one_off: Mapped[bool] = mapped_column(Boolean, default=False)
     # status ignored: this debit pays the statement of that card account
     settles_account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -449,6 +451,7 @@ _LATER_COLUMNS = {
         "settles_account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
         # bookings decided before this was recorded count as a person's decision
         "decided_by": "VARCHAR(8) NOT NULL DEFAULT 'person'",
+        "one_off": "BOOLEAN NOT NULL DEFAULT FALSE",
     },
     "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
     "meters": {

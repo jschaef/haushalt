@@ -64,6 +64,8 @@ export type Summary = {
   saved_cents: number;
   // bookings still waiting for review count nowhere yet
   open: { count: number; out_cents: number; in_cents: number };
+  // bookings marked as one-off: in no category, average, balance or chart
+  one_off: { count: number; out_cents: number; in_cents: number };
   by_income: { key: string; name_de: string; name_en: string; color: string; cents: number }[];
   monthly: { month: string; income_cents: number; spending_cents: number }[];
   average: { total: Averages; variable: Averages; fixed: Averages };
@@ -186,7 +188,14 @@ export type BankTransaction = {
   settles_account_id: number | null;
   // auto: the app decided (matched again after changes), person: kept
   decided_by: "auto" | "person";
+  // marked by a person: counted apart from averages and balance
+  one_off: boolean;
   tag_ids: number[];
+};
+
+export type BankSettings = {
+  // bookings from this amount on are suggested as one-offs; 0: none
+  one_off_threshold_cents: number;
 };
 
 export type ImportResult = {
@@ -374,5 +383,9 @@ export const api = {
   candidates: (id: number) => request<ReceiptCandidate[]>(`bank/transactions/${id}/candidates`),
   decide: (id: number, decision: BookingDecision) => request<BankTransaction>(`bank/transactions/${id}`, json("PATCH", decision)),
   rematch: () => request<{ matched: number }>("bank/rematch", { method: "POST" }),
+  markOneOff: (id: number, oneOff: boolean) =>
+    request<BankTransaction>(`bank/transactions/${id}/one-off`, json("PUT", { one_off: oneOff })),
+  bankSettings: () => request<BankSettings>("bank/settings"),
+  saveBankSettings: (body: BankSettings) => request<BankSettings>("bank/settings", json("PUT", body)),
   deleteTransaction: (id: number) => request<void>(`bank/transactions/${id}`, { method: "DELETE" }),
 };
