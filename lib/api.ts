@@ -60,6 +60,8 @@ export type Summary = {
   // income minus spending: saved, or still on the accounts
   balance_cents: number;
   savings_rate: number | null;
+  // part of the balance moved to own savings accounts
+  saved_cents: number;
   // bookings still waiting for review count nowhere yet
   open: { count: number; out_cents: number; in_cents: number };
   by_income: { key: string; name_de: string; name_en: string; color: string; cents: number }[];
@@ -198,8 +200,18 @@ export type ImportResult = {
 } & Record<BookingStatus, number>;
 
 // card_number: masked number of a credit card account, "" for other accounts
-export type BankAccount = { id: number; name: string; bank: string; iban: string; card_number: string; color: string; bookings: number };
-export type BankAccountInput = Pick<BankAccount, "name" | "bank" | "iban" | "color">;
+// kind: transfers to a savings account count as saved; card = a card statement's account
+export type BankAccount = {
+  id: number;
+  name: string;
+  bank: string;
+  iban: string;
+  card_number: string;
+  kind: "giro" | "savings" | "card";
+  color: string;
+  bookings: number;
+};
+export type BankAccountInput = Pick<BankAccount, "name" | "bank" | "iban" | "color"> & { kind: "giro" | "savings" };
 
 export type ReceiptCandidate = { id: number; store_name: string; purchased_on: string | null; total_cents: number; store_matches: boolean };
 

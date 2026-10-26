@@ -51,6 +51,7 @@ class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     bank: str = Field(default="", max_length=64)
     iban: str = Field(default="", max_length=42)
+    kind: str = Field(default="giro", pattern=r"^(giro|savings)$")
     color: str = Field(default="#64748b", pattern=r"^#[0-9a-fA-F]{6}$")
 
 
@@ -60,6 +61,8 @@ class AccountOut(BaseModel):
     bank: str
     iban: str
     card_number: str
+    # giro, savings or card (a card statement's account)
+    kind: str
     color: str
     bookings: int
 
@@ -72,6 +75,7 @@ def _account_out(session: Session, account: BankAccount) -> AccountOut:
         bank=account.bank,
         iban=account.iban,
         card_number=account.card_number,
+        kind="card" if account.card_number else account.kind,
         color=account.color,
         bookings=count,
     )
@@ -85,7 +89,7 @@ def _clean_account(session: Session, body: AccountIn, own_id: int | None = None)
         other = session.scalar(select(BankAccount).where(BankAccount.iban == iban))
         if other is not None and other.id != own_id:
             raise HTTPException(status_code=409, detail="Account with this IBAN exists")
-    return {"name": " ".join(body.name.split()), "bank": body.bank.strip(), "iban": iban, "color": body.color}
+    return {"name": " ".join(body.name.split()), "bank": body.bank.strip(), "iban": iban, "kind": body.kind, "color": body.color}
 
 
 def _account(session: Session, account_id: int) -> BankAccount:

@@ -113,6 +113,11 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   chart. Spending selects use `spendingCategories()`. One-time migration
   `db._reopen_income` (marker in `app_state`) moved old ignored incoming
   bookings back to review.
+- Savings accounts (Jochen, 2026-10-26): `BankAccount.kind` giro|savings
+  (API reports card for card accounts). `saved_cents` in the summary = net
+  transfers to savings accounts, counted on the giro side; a savings-side
+  booking counts only without a mirror booking (same amount, within 3
+  days). Shown as "davon aufs Sparkonto" under the balance.
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,

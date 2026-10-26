@@ -40,3 +40,45 @@ test("incoming salary is income and shows against spending on the dashboard", as
   await expect(tile.getByTestId("cash-income")).not.toHaveText("0,00 €");
   await expect(tile.getByTestId("cash-balance")).toBeVisible();
 });
+
+// made-up IBANs with valid check digits, one pair per browser project
+const SAVINGS: Record<string, { giro: string; savings: string }> = {
+  desktop: { giro: "DE37100200300000007777", savings: "DE13100200300000008888" },
+  phone: { giro: "DE11100200300000009991", savings: "DE81100200300000009992" },
+};
+
+function giroStatement(own: string, rows: [string, string, string, string][]) {
+  const lines = [
+    "Umsätze",
+    "Konto;Filial-/Kontonummer;IBAN;Währung",
+    `Giro;000 0000000 00;${own};EUR`,
+    "",
+    "Buchungstag;Wert;Umsatzart;Begünstigter / Auftraggeber;Verwendungszweck;IBAN / Kontonummer;BIC;Kundenreferenz;" +
+      "Mandatsreferenz;Gläubiger ID;Fremde Gebühren;Betrag;Abweichender Empfänger;Anzahl der Aufträge;Anzahl der Schecks;Soll;Haben;Währung",
+    ...rows.map(([who, why, iban, amount]) => `${today()};${today()};Überweisung;${who};${why};${iban};;;;;;${amount};;;;;;EUR`),
+  ];
+  return { name: "giro.csv", mimeType: "text/csv", buffer: Buffer.from(lines.join("\n"), "utf-8") };
+}
+
+test("a transfer to a savings account shows as saved", async ({ page }, info) => {
+  const { giro, savings } = SAVINGS[info.project.name];
+  await login(page);
+  const before = await page.evaluate(async () => (await (await fetch("/api/v1/stats/summary?range=30d")).json()).saved_cents as number);
+
+  await page.goto("/settings");
+  const tile = page.getByTestId("accounts-tile");
+  await tile.getByLabel("Name").last().fill(`Tagesgeld ${info.project.name}`);
+  await tile.getByLabel("Art").last().selectOption("savings");
+  await tile.getByLabel("IBAN").last().fill(savings);
+  await tile.getByRole("button", { name: "Konto hinzufügen" }).click();
+  await expect(tile.getByTestId("account-row").filter({ has: page.locator(`input[value="${savings}"]`) })).toBeVisible();
+
+  await page.goto("/bank");
+  await page.getByTestId("statement-input").setInputFiles(giroStatement(giro, [["Ich", "Sparen", savings, "-77,77"]]));
+  await expect(toast(page, "success").filter({ hasText: "1 Umbuchung" })).toBeVisible();
+
+  const after = await page.evaluate(async () => (await (await fetch("/api/v1/stats/summary?range=30d")).json()).saved_cents as number);
+  expect(after).toBe(before + 7777);
+  await page.goto("/dashboard");
+  await expect(page.getByTestId("cash-saved")).toBeVisible();
+});

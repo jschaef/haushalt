@@ -261,6 +261,9 @@ class BankAccount(Base):
     # credit cards have no IBAN: the masked number of the card statement
     # ("4000********1234"); empty for giro and savings accounts
     card_number: Mapped[str] = mapped_column(String(19), default="", index=True)
+    # "giro" or "savings": transfers to a savings account count as saved
+    # (a credit card is recognised by its card_number)
+    kind: Mapped[str] = mapped_column(String(16), default="giro")
     color: Mapped[str] = mapped_column(String(7), default="#64748b")
 
 
@@ -411,7 +414,7 @@ _LATER_COLUMNS = {
         "token_version": "INTEGER NOT NULL DEFAULT 0",
     },
     "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
-    "bank_accounts": {"card_number": "VARCHAR(19) NOT NULL DEFAULT ''"},
+    "bank_accounts": {"card_number": "VARCHAR(19) NOT NULL DEFAULT ''", "kind": "VARCHAR(16) NOT NULL DEFAULT 'giro'"},
     "bank_transactions": {
         "account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
         "statement_on": "DATE",

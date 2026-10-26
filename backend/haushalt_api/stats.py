@@ -9,6 +9,10 @@ Income: counted incoming bank bookings in an income category. An incoming
 booking counted in a spending category is a refund and lowers that
 category. Bookings still waiting for review count nowhere; their sums are
 reported apart, so a gap in the comparison stays visible.
+
+Saved: money moved to an own savings account (and back). The giro side of
+a transfer counts; a booking on the savings account counts only when the
+statement of the other account is not imported (no mirror booking).
 """
 
 from collections import defaultdict
@@ -18,7 +22,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankTransaction, Category, Receipt, RecurringCost, Tag
+from .db import BankAccount, BankTransaction, Category, Receipt, RecurringCost, Tag
 
 DAYS_PER_MONTH = 365.25 / 12
 OTHER = "other"
@@ -158,6 +162,44 @@ def _open_bookings(session: Session, period: Period) -> dict:
     }
 
 
+MIRROR_DAYS = 3
+
+
+def _saved(session: Session, period: Period) -> int:
+    """Net cents moved to the household's savings accounts in the period."""
+    accounts = session.scalars(select(BankAccount).where(BankAccount.iban != "")).all()
+    own = {a.iban: a for a in accounts}
+    savings = {a.id for a in accounts if a.kind == "savings" and not a.card_number}
+    if not savings:
+        return 0
+    transfers = session.scalars(
+        select(BankTransaction).where(
+            BankTransaction.status == "ignored",
+            BankTransaction.iban != "",
+            BankTransaction.booked_on.between(period.start, period.end),
+        )
+    ).all()
+    saved = 0
+    mirrors: list[tuple[int, date, int]] = []
+    for tx in transfers:
+        other = own.get("".join(tx.iban.split()).upper())
+        if other is not None and other.id in savings and tx.account_id not in savings:
+            saved -= tx.amount_cents  # -100 on the giro account: 100 saved
+            mirrors.append((other.id, tx.booked_on, -tx.amount_cents))
+    for tx in transfers:
+        other = own.get("".join(tx.iban.split()).upper())
+        if tx.account_id in savings and other is not None and other.id not in savings:
+            mirror = next(
+                (m for m in mirrors if m[0] == tx.account_id and m[2] == tx.amount_cents and abs((m[1] - tx.booked_on).days) <= MIRROR_DAYS),
+                None,
+            )
+            if mirror is not None:
+                mirrors.remove(mirror)  # counted from the giro side already
+            else:
+                saved += tx.amount_cents
+    return saved
+
+
 def _months(period: Period) -> list[Period]:
     """The calendar months of a period, the first and last one cut to it."""
     months = []
@@ -214,6 +256,8 @@ def summary(session: Session, period: Period) -> dict:
         # what is left: saved, or still on the accounts
         "balance_cents": round(income - total),
         "savings_rate": round((income - total) / income, 4) if income > 0 else None,
+        # part of the balance moved to own savings accounts
+        "saved_cents": _saved(session, period),
         "open": _open_bookings(session, period),
         "by_income": sorted(
             (

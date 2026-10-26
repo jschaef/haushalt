@@ -238,6 +238,14 @@ function Cashflow({ summary: s, fmt }: { summary: Summary; fmt: (v: number) => s
         >
           {signed(s.balance_cents)}
         </dd>
+        {s.saved_cents !== 0 && (
+          <>
+            <dt className="pl-3 text-muted-foreground">{t("cash.saved")}</dt>
+            <dd className="tabular text-right" data-testid="cash-saved">
+              {fmt(s.saved_cents)}
+            </dd>
+          </>
+        )}
         {s.savings_rate !== null && (
           <>
             <dt className="text-muted-foreground">{t("cash.rate")}</dt>
