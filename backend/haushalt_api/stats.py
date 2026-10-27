@@ -14,6 +14,10 @@ One-offs: bookings a person marked as one-off (a gift, a car) count in no
 category, average, balance or chart; their sums in and out are reported
 apart. That covers the ones still waiting for review too.
 
+Reset date ("ab jetzt", set by an admin): the dashboard starts there. Older
+receipts, bookings and costs stay stored; no period reaches before it, and
+a previous period that would is not compared.
+
 Saved: money moved to an own savings account (and back). The giro side of
 a transfer counts; a booking on the savings account counts only when the
 statement of the other account is not imported (no mirror booking).
@@ -26,7 +30,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankAccount, BankTransaction, Category, Receipt, RecurringCost, Tag
+from .db import AppState, BankAccount, BankTransaction, Category, Receipt, RecurringCost, Tag
 
 DAYS_PER_MONTH = 365.25 / 12
 OTHER = "other"
@@ -60,14 +64,27 @@ def first_activity(session: Session) -> date | None:
     return min(candidates) if candidates else None
 
 
+SINCE_KEY = "dashboard_since"
+
+
+def reset_date(session: Session) -> date | None:
+    state = session.get(AppState, SINCE_KEY)
+    return date.fromisoformat(state.value) if state and state.value else None
+
+
 def resolve_period(session: Session, range_key: str, today: date | None = None) -> Period:
     today = today or date.today()
     if range_key == "ytd":
-        return Period(date(today.year, 1, 1), today)
-    if range_key == "all":
-        return Period(first_activity(session) or today, today)
-    days = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}.get(range_key, 30)
-    return Period(today - timedelta(days=days - 1), today)
+        start = date(today.year, 1, 1)
+    elif range_key == "all":
+        start = first_activity(session) or today
+    else:
+        days = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}.get(range_key, 30)
+        start = today - timedelta(days=days - 1)
+    since = reset_date(session)
+    if since is not None:
+        start = max(start, min(since, today))
+    return Period(start, today)
 
 
 def _averages(total_cents: float, days: int) -> dict:
@@ -250,8 +267,11 @@ def summary(session: Session, period: Period) -> dict:
         })
 
     previous_period = Period(period.start - timedelta(days=period.days), period.start - timedelta(days=1))
-    previous = _period_totals(session, previous_period, categories)
-    previous_total = sum(previous["by_category"].values())
+    since = reset_date(session)
+    previous_total = 0.0  # 0: no comparison
+    if since is None or previous_period.start >= since:
+        previous = _period_totals(session, previous_period, categories)
+        previous_total = sum(previous["by_category"].values())
 
     daily = []
     day = period.start
@@ -263,6 +283,8 @@ def summary(session: Session, period: Period) -> dict:
         "start": period.start.isoformat(),
         "end": period.end.isoformat(),
         "days": period.days,
+        # the dashboard starts here (older data stays stored)
+        "since": since.isoformat() if since else None,
         "receipt_count": current["receipt_count"],
         "total_cents": round(total),
         "variable_cents": round(variable),

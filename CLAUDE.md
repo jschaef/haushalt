@@ -143,6 +143,10 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   and confirming a receipt re-match the app's own decisions in the
   background, so a supermarket booking counted before its receipt moves
   to the receipt instead of counting twice.
+- Reset date (Jochen, 2026-10-27; `stats.reset_date`, `/stats/since`, PUT
+  admins only, not in the future, null lifts it): the whole dashboard
+  starts there - every period of the summary is cut to it, a previous
+  period before it is not compared (`previous_total_cents` 0). Data stays.
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,

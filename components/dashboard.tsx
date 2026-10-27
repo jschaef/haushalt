@@ -75,6 +75,11 @@ export function Dashboard() {
               {shortDate(s.start, locale)} – {shortDate(s.end, locale)} · {s.days} {t("dash.days")}
             </p>
           )}
+          {s?.since && (
+            <p className="text-xs text-muted-foreground" data-testid="dash-since">
+              {t("dash.since", { date: shortDate(s.since, locale) })}
+            </p>
+          )}
         </div>
         <RangePicker value={range} onChange={setRange} />
       </div>

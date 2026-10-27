@@ -50,6 +50,8 @@ export type Summary = {
   start: string;
   end: string;
   days: number;
+  // the reset date ("ab jetzt"): the dashboard starts there, null = none
+  since: string | null;
   receipt_count: number;
   total_cents: number;
   variable_cents: number;
@@ -337,6 +339,9 @@ export const api = {
     request<Recurring>(`recurring/${id}`, json("PUT", body)),
   deleteRecurring: (id: number) => request<void>(`recurring/${id}`, { method: "DELETE" }),
   summary: (range: Range) => request<Summary>(`stats/summary?range=${range}`),
+  resetDate: () => request<{ since: string | null }>("stats/since"),
+  // admins only; null lifts the reset date
+  saveResetDate: (since: string | null) => request<{ since: string | null }>("stats/since", json("PUT", { since })),
   meters: () => request<Meter[]>("meters"),
   createMeter: (body: MeterInput) => request<Meter>("meters", json("POST", body)),
   updateMeter: (id: number, body: MeterInput) => request<Meter>(`meters/${id}`, json("PUT", body)),
