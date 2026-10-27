@@ -16,6 +16,11 @@ const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 // browser session: no cookie, no Origin. Only this path and method pass the
 // client's Authorization header on; a session token is never added to it.
 const DEVICE_INGEST = "ingest/reading";
+// Scripts on the host use a member's API token (prefix "hh_"): it is passed
+// on instead of the cookie. No Origin check for them - a browser cannot send
+// an Authorization header cross-site without CORS, which this app never allows.
+// The API decides what such a token may do (read, upload receipts/statements).
+const API_TOKEN = /^Bearer hh_[A-Za-z0-9_-]+$/;
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 async function forward(request: NextRequest, { params }: RouteContext<"/api/v1/[...path]">) {
@@ -29,11 +34,13 @@ async function forward(request: NextRequest, { params }: RouteContext<"/api/v1/[
   if (device && request.method !== "POST") {
     return NextResponse.json({ detail: "Method not allowed" }, { status: 405 });
   }
-  if (!device && UNSAFE_METHODS.has(request.method) && !sameOrigin(request)) {
+  const authorization = request.headers.get("authorization") ?? "";
+  const script = !device && API_TOKEN.test(authorization);
+  if (!device && !script && UNSAFE_METHODS.has(request.method) && !sameOrigin(request)) {
     return NextResponse.json({ detail: "Cross-site request rejected" }, { status: 403 });
   }
-  const token = device ? undefined : request.cookies.get(SESSION_COOKIE)?.value;
-  if (!token && !device && !PUBLIC.has(joined)) {
+  const token = device || script ? undefined : request.cookies.get(SESSION_COOKIE)?.value;
+  if (!token && !device && !script && !PUBLIC.has(joined)) {
     return NextResponse.json({ detail: "Not logged in" }, { status: 401 });
   }
   const headers = new Headers();
@@ -42,10 +49,10 @@ async function forward(request: NextRequest, { params }: RouteContext<"/api/v1/[
     if (value) headers.set(name, value);
   }
   if (token) headers.set("authorization", `Bearer ${token}`);
+  if (script) headers.set("authorization", authorization);
   if (device) {
-    const deviceAuth = request.headers.get("authorization");
-    if (!deviceAuth) return NextResponse.json({ detail: "Device token required" }, { status: 401 });
-    headers.set("authorization", deviceAuth);
+    if (!authorization) return NextResponse.json({ detail: "Device token required" }, { status: 401 });
+    headers.set("authorization", authorization);
   }
 
   const hasBody = !["GET", "HEAD"].includes(request.method) && request.body;

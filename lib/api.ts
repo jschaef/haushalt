@@ -198,6 +198,8 @@ export type BankTransaction = {
 // a word in a bank counterparty that counts payments in a category
 export type Merchant = { id: number; keyword: string; category_id: number };
 export type MerchantInput = { keyword: string; category_id: number };
+export type ApiToken = { id: number; name: string; hint: string; created_at: string; last_used_at: string | null };
+export type NewApiToken = ApiToken & { token: string };
 
 // the household (tenant) of the logged-in member
 export type Household = { id: number; name: string };
@@ -437,6 +439,9 @@ export const api = {
   createMerchant: (body: MerchantInput) => request<Merchant>("bank/merchants", json("POST", body)),
   updateMerchant: (id: number, body: MerchantInput) => request<Merchant>(`bank/merchants/${id}`, json("PUT", body)),
   deleteMerchant: (id: number) => request<void>(`bank/merchants/${id}`, { method: "DELETE" }),
+  apiTokens: () => request<ApiToken[]>("api-tokens"),
+  createApiToken: (name: string) => request<NewApiToken>("api-tokens", json("POST", { name })),
+  revokeApiToken: (id: number) => request<void>(`api-tokens/${id}`, { method: "DELETE" }),
   saveBankSettings: (body: BankSettings) => request<BankSettings>("bank/settings", json("PUT", body)),
   deleteTransaction: (id: number) => request<void>(`bank/transactions/${id}`, { method: "DELETE" }),
 };

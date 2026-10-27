@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { useTheme } from "next-themes";
-import { KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
+import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Tile } from "@/components/bento";
 import { Badge } from "@/components/ui/badge";
@@ -15,16 +15,18 @@ import { PasswordForm } from "@/components/password-form";
 import {
   api,
   spendingCategories,
+  type ApiToken,
   type BankAccount,
   type BankAccountInput,
   type Category,
   type Merchant,
+  type NewApiToken,
   type OneTimePassword,
   type Tag,
   type User,
 } from "@/lib/api";
 import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
-import { localToday, shortDate } from "@/lib/format";
+import { dateTime, localToday, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
@@ -927,6 +929,135 @@ function MerchantsTile() {
   );
 }
 
+function NewTokenPanel({ token, onDone }: { token: NewApiToken; onDone: () => void }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  const example = `curl -H "Authorization: Bearer ${token.token}" -F files=@bon.jpg ${origin}/api/v1/receipts`;
+  return (
+    <div role="status" className="space-y-2 rounded-xl border-2 border-primary p-3" data-testid="new-api-token">
+      <p className="text-sm font-medium">{t("apiTokens.newTitle", { name: token.name })}</p>
+      <p className="break-all font-mono text-sm select-all" data-testid="api-token-value">
+        {token.token}
+      </p>
+      <p className="text-xs text-muted-foreground">{t("apiTokens.newHint")}</p>
+      <pre className="rounded-lg bg-muted/60 p-2 font-mono text-xs break-all whitespace-pre-wrap">{example}</pre>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(token.token)
+              .then(() => setCopied(true))
+              .catch(() => undefined)
+          }
+        >
+          {copied ? <Check /> : <Copy />} {copied ? t("members.copied") : t("members.copy")}
+        </Button>
+        <Button type="button" size="sm" onClick={onDone}>
+          {t("members.done")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ApiTokenRow({ token, onChanged }: { token: ApiToken; onChanged: () => void }) {
+  const { t, locale } = useI18n();
+  const [busy, setBusy] = useState(false);
+
+  async function revoke() {
+    if (!window.confirm(t("apiTokens.revokeConfirm", { name: token.name }))) return;
+    setBusy(true);
+    try {
+      await api.revokeApiToken(token.id);
+      toast.success(t("apiTokens.revoked"));
+      onChanged();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/50 px-3 py-2" data-testid="api-token-row">
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium">
+          {token.name} <span className="font-mono text-xs text-muted-foreground">…{token.hint}</span>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          {token.last_used_at ? t("apiTokens.lastUsed", { when: dateTime(token.last_used_at, locale) }) : t("apiTokens.neverUsed")}
+        </p>
+      </div>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-destructive"
+        disabled={busy}
+        aria-label={t("apiTokens.revoke", { name: token.name })}
+        onClick={() => void revoke()}
+      >
+        <Trash2 />
+      </Button>
+    </li>
+  );
+}
+
+function ApiTokensTile() {
+  const { t } = useI18n();
+  const tokens = useData(() => api.apiTokens(), "api-tokens");
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<NewApiToken | null>(null);
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      setCreated(await api.createApiToken(name.trim()));
+      setName("");
+      toast.success(t("apiTokens.created"));
+      await tokens.reload();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile index={11} title={t("apiTokens.title")} className="md:col-span-2" testId="api-tokens-tile">
+      <p className="mb-3 text-sm text-muted-foreground">{t("apiTokens.hint")}</p>
+      {created && <NewTokenPanel token={created} onDone={() => setCreated(null)} />}
+      {!tokens.data ? (
+        <Skeleton className="h-16 rounded-xl" />
+      ) : tokens.data.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">{t("apiTokens.empty")}</p>
+      ) : (
+        <ul className="mt-3 space-y-1.5">
+          {tokens.data.map((token) => (
+            <ApiTokenRow key={token.id} token={token} onChanged={() => void tokens.reload()} />
+          ))}
+        </ul>
+      )}
+      <form onSubmit={add} className="mt-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-32 flex-1 space-y-1">
+          <Label htmlFor="api-token-name" className="text-xs">
+            {t("apiTokens.name")}
+          </Label>
+          <Input id="api-token-name" value={name} maxLength={64} onChange={(e) => setName(e.target.value)} required />
+        </div>
+        <Button type="submit" disabled={busy || !name.trim()}>
+          <Plus /> {t("apiTokens.add")}
+        </Button>
+      </form>
+    </Tile>
+  );
+}
+
 function ResetTile() {
   const { t, locale } = useI18n();
   const me = useData(() => api.me(), "me");
@@ -1059,6 +1190,7 @@ export function Settings() {
         <OneOffTile />
         <ResetTile />
         <MerchantsTile />
+        <ApiTokensTile />
       </div>
     </div>
   );

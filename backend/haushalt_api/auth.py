@@ -11,15 +11,16 @@ import json
 import secrets
 import time
 from dataclasses import dataclass
+from datetime import timedelta
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from . import config
 from . import tenancy
-from .db import Household, RevokedToken, User, get_session
+from .db import ApiToken, Household, RevokedToken, User, get_session, utcnow
 from .passwords import normalize
 
 _bearer = HTTPBearer(auto_error=False)
@@ -126,23 +127,77 @@ def current_claims(
     return claims
 
 
+# --- API tokens ----------------------------------------------------------------
+
+API_TOKEN_PREFIX = "hh_"
+# what a script may change with an API token: (method, route) - all else read-only
+API_TOKEN_WRITES = {("POST", "/api/v1/receipts"), ("POST", "/api/v1/bank/import")}
+_LAST_USED_STEP = timedelta(minutes=1)
+
+
+def new_api_token() -> tuple[str, str]:
+    """(token shown once, hash stored)"""
+    token = API_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    return token, hash_api_token(token)
+
+
+def hash_api_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _api_token(request: Request, session: Session, token: str) -> tuple[ApiToken, User]:
+    # the token names its household: look in all of them
+    record = session.scalar(tenancy.everywhere(select(ApiToken).where(ApiToken.token_hash == hash_api_token(token))))
+    user = session.get(User, record.user_id, execution_options=tenancy.EVERYWHERE) if record else None
+    if record is None or user is None:
+        raise HTTPException(status_code=401, detail="Unknown API token")
+    if record.version != user.token_version:
+        raise HTTPException(status_code=401, detail="Session ended")
+    if request.method not in ("GET", "HEAD") and (request.method, request.url.path) not in API_TOKEN_WRITES:
+        raise HTTPException(status_code=403, detail="api_token_read_only")
+    request.state.api_token = True
+    return record, user
+
+
+def _note_use(session: Session, record: ApiToken) -> None:
+    now = utcnow()
+    last = record.last_used_at
+    # SQLite gives naive datetimes back
+    if last is None or now - (last if last.tzinfo else last.replace(tzinfo=now.tzinfo)) > _LAST_USED_STEP:
+        record.last_used_at = now
+        session.commit()
+
+
 def session_user(
-    claims: TokenClaims = Depends(current_claims),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: Session = Depends(get_session),
 ) -> User:
     """The logged-in account, also while it still has to replace a one-time
-    password - only for the routes that do exactly that."""
-    user = session.get(User, claims.user_id, execution_options=tenancy.EVERYWHERE)
-    if user is None:
-        raise HTTPException(status_code=401, detail="Unknown user")
-    # a password change, reset or disabling raised the version: old sessions end
-    if user.disabled or claims.version != user.token_version:
+    password - only for the routes that do exactly that. Scripts come with an
+    API token instead of a session token."""
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    record = None
+    if credentials.credentials.startswith(API_TOKEN_PREFIX):
+        record, user = _api_token(request, session, credentials.credentials)
+    else:
+        claims = current_claims(credentials, session)
+        user = session.get(User, claims.user_id, execution_options=tenancy.EVERYWHERE)
+        if user is None:
+            raise HTTPException(status_code=401, detail="Unknown user")
+        # a password change, reset or disabling raised the version: old sessions end
+        if claims.version != user.token_version:
+            raise HTTPException(status_code=401, detail="Session ended")
+    if user.disabled:
         raise HTTPException(status_code=401, detail="Session ended")
     household = session.get(Household, user.household_id) if user.household_id else None
     if household is not None and household.disabled:
         raise HTTPException(status_code=401, detail="household_disabled")
     # from here on the request sees only this household
     tenancy.bind(session, user.household_id)
+    if record is not None:
+        _note_use(session, record)
     return user
 
 
@@ -163,6 +218,13 @@ def operator_user(user: User = Depends(session_user)) -> User:
         raise HTTPException(status_code=403, detail="password_change_required")
     if not user.is_operator:
         raise HTTPException(status_code=403, detail="Only the operator may do this")
+    return user
+
+
+def browser_member(request: Request, user: User = Depends(current_user)) -> User:
+    """A member in the browser: API tokens cannot manage API tokens."""
+    if getattr(request.state, "api_token", False):
+        raise HTTPException(status_code=403, detail="session_required")
     return user
 
 

@@ -78,6 +78,14 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   403 `operator_only` (the client then opens `/operator`); the first
   signup counts household members only.
 - All members of a household share its data; receipts remember the uploader.
+- API tokens (Jochen, 2026-10-27; `ApiToken`, `tokens_api.py`, settings
+  tile): per member for scripts on the host, prefix `hh_`, shown once,
+  sha256 stored, no expiry; revoked, or ended by the account's
+  `token_version` / disabling. A token reads like its member and writes only
+  `auth.API_TOKEN_WRITES` (receipt upload, bank import), else 403
+  `api_token_read_only`; managing tokens needs the session (`browser_member`).
+  The gateway passes `Authorization: Bearer hh_...` on without cookie and
+  Origin check (a browser cannot send it cross-site without CORS).
 - Members (Jochen, 2026-10-23): the first account is admin; only admins add
   members, reset passwords and disable accounts. Adding and resetting give a
   one-time password (`must_change_password`): until it is replaced every

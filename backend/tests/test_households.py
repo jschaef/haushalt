@@ -50,6 +50,7 @@ def mine(client, auth, png):
     ids["tariff_id"] = client.post(f"/api/v1/meters/{ids['meter_id']}/tariffs", headers=auth, json={"valid_from": DAY, "unit_price_ct": 30}).json()["id"]
     ids["bill_id"] = client.post("/api/v1/bills", headers=auth, files=[("file", ("r.pdf", b"%PDF-1.4 fake bill", "application/pdf"))]).json()["id"]
     ids["user_id"] = client.get("/api/v1/me", headers=auth).json()["id"]
+    ids["token_id"] = client.post("/api/v1/api-tokens", headers=auth, json={"name": "Skript"}).json()["id"]
     return ids
 
 
@@ -93,6 +94,7 @@ ROUTES = [
     ("DELETE", "/api/v1/recurring/{cost_id}", None),
     ("DELETE", "/api/v1/receipts/{receipt_id}", None),
     ("DELETE", "/api/v1/meters/{meter_id}", None),
+    ("DELETE", "/api/v1/api-tokens/{token_id}", None),
 ]
 
 
@@ -111,11 +113,11 @@ def test_routes_list_covers_the_api():
     """A new route with an id must join ROUTES above."""
     from fastapi.routing import APIRoute
 
-    from haushalt_api import banking_api, operator_api, smartmeter_api, tags_api, utilities_api
+    from haushalt_api import banking_api, operator_api, smartmeter_api, tags_api, tokens_api, utilities_api
     from haushalt_api.main import app
 
     routes = [r for r in app.router.routes if isinstance(r, APIRoute)]
-    for module in (banking_api, operator_api, smartmeter_api, tags_api, utilities_api):
+    for module in (banking_api, operator_api, smartmeter_api, tags_api, tokens_api, utilities_api):
         routes += module.router.routes
     # the operator's routes have tests of their own (test_operator.py)
     with_ids = {(m, r.path) for r in routes if "{" in r.path and not r.path.startswith("/api/v1/operator") for m in r.methods}
@@ -125,7 +127,7 @@ def test_routes_list_covers_the_api():
 LISTS = [
     "/api/v1/categories", "/api/v1/receipts", "/api/v1/recurring", "/api/v1/bank/accounts",
     "/api/v1/bank/transactions", "/api/v1/bank/merchants", "/api/v1/tags", "/api/v1/meters",
-    "/api/v1/bills", "/api/v1/users", "/api/v1/stores",
+    "/api/v1/bills", "/api/v1/users", "/api/v1/stores", "/api/v1/api-tokens",
 ]
 
 
