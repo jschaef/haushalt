@@ -251,6 +251,18 @@ export type User = {
   is_admin: boolean;
   disabled: boolean;
   must_change_password: boolean;
+  // manages households, belongs to none (sees no household data)
+  is_operator: boolean;
+};
+
+export type HouseholdAdmin = { id: number; username: string; display_name: string; disabled: boolean };
+export type OperatorHousehold = {
+  id: number;
+  name: string;
+  disabled: boolean;
+  created_at: string;
+  members: number;
+  admins: HouseholdAdmin[];
 };
 
 export type OneTimePassword = { user: User; one_time_password: string };
@@ -293,6 +305,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const error = errorFrom(response.status, await response.json().catch(() => ({})), response.statusText);
+    if (error.message === "operator_only" && typeof window !== "undefined") {
+      // the operator has no household: its own page
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = "/operator";
+    }
     if (error.message === "password_change_required" && typeof window !== "undefined") {
       // logged in with a one-time password: replace it first
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
@@ -311,6 +328,14 @@ function json(method: string, body: unknown): RequestInit {
 export const api = {
   me: () => request<User>("me"),
   household: () => request<Household>("household"),
+  operator: {
+    households: () => request<OperatorHousehold[]>("operator/households"),
+    create: (body: { name: string; admin_username: string; admin_display_name?: string }) =>
+      request<{ household: OperatorHousehold; one_time_password: string }>("operator/households", json("POST", body)),
+    update: (id: number, body: { name?: string; disabled?: boolean }) =>
+      request<OperatorHousehold>(`operator/households/${id}`, json("PATCH", body)),
+    resetAdmin: (userId: number) => request<{ one_time_password: string }>(`operator/users/${userId}/reset-password`, { method: "POST" }),
+  },
   // admins only
   renameHousehold: (name: string) => request<Household>("household", json("PUT", { name })),
   updateMe: (patch: Partial<Pick<User, "display_name" | "locale">>) => request<User>("me", json("PATCH", patch)),

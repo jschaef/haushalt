@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking, banking_api, config, receipts, smartmeter, smartmeter_api, stats, tags_api, tenancy, utilities_api
+from . import banking, banking_api, config, operator_api, receipts, smartmeter, smartmeter_api, stats, tags_api, tenancy, utilities_api
 from .auth import (
     TokenClaims,
     admin_user,
@@ -87,6 +87,7 @@ app.include_router(smartmeter_api.ingest_router)
 app.include_router(utilities_api.router)
 app.include_router(banking_api.router)
 app.include_router(tags_api.router)
+app.include_router(operator_api.router)
 PREFIX = "/api/v1"
 LOCALES = ("de", "en")
 
@@ -124,6 +125,7 @@ class UserOut(BaseModel):
     is_admin: bool
     disabled: bool
     must_change_password: bool
+    is_operator: bool = False
 
 
 class UserPatch(BaseModel):
@@ -269,6 +271,7 @@ def user_out(user: User) -> UserOut:
         is_admin=user.is_admin,
         disabled=user.disabled,
         must_change_password=user.must_change_password,
+        is_operator=user.is_operator,
     )
 
 
@@ -280,7 +283,7 @@ def check_password(password: str, username: str, display_name: str = "") -> None
 
 
 def token_out(user: User) -> dict:
-    return {**create_token(user), "must_change_password": user.must_change_password}
+    return {**create_token(user), "must_change_password": user.must_change_password, "is_operator": user.is_operator}
 
 
 def end_sessions(user: User) -> None:
@@ -334,7 +337,8 @@ def health():
 @app.get(f"{PREFIX}/setup")
 def setup_state(session: Session = Depends(get_session)):
     """Whether the first user still has to be created (shows signup)."""
-    users = session.scalar(tenancy.everywhere(select(func.count(User.id)))) or 0
+    # household members; the operator alone sets up no household
+    users = session.scalar(tenancy.everywhere(select(func.count(User.id)).where(User.is_operator.is_(False)))) or 0
     return {"needs_first_user": users == 0, "signup_open": users == 0 or config.ALLOW_SIGNUP}
 
 
@@ -359,7 +363,8 @@ def signup(body: NewUser, session: Session = Depends(get_session)):
     """Open while no user exists (or HAUSHALT_ALLOW_SIGNUP is set). The first
     account sets up the first household and runs it; later ones (with
     HAUSHALT_ALLOW_SIGNUP) join that household."""
-    users = session.scalar(tenancy.everywhere(select(func.count(User.id)))) or 0
+    # household members; the operator alone sets up no household
+    users = session.scalar(tenancy.everywhere(select(func.count(User.id)).where(User.is_operator.is_(False)))) or 0
     if users and not config.ALLOW_SIGNUP:
         raise HTTPException(status_code=403, detail="Signup is closed, ask a household member")
     check_password(body.password, body.username, body.display_name)

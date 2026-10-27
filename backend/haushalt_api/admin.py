@@ -3,6 +3,7 @@
     podman compose -f deployment/compose.yaml exec api python -m haushalt_api.admin reset-password <username>
     podman compose -f deployment/compose.yaml exec api python -m haushalt_api.admin make-admin <username>
     podman compose -f deployment/compose.yaml exec api python -m haushalt_api.admin list
+    podman compose -f deployment/compose.yaml exec api python -m haushalt_api.admin create-operator <username>
 
 Whoever can run commands in the container owns the data anyway, so this
 needs no further login.
@@ -28,14 +29,30 @@ def main(argv: list[str] | None = None) -> int:
     ):
         commands.add_parser(name, help=text).add_argument("username")
     commands.add_parser("list", help="list the accounts")
+    commands.add_parser(
+        "create-operator", help="create the operator account (manages households, sees no household data)"
+    ).add_argument("username")
     args = parser.parse_args(argv)
 
     init_db()
     # the operator's tool: accounts of every household
     with tenancy.unscoped(SessionLocal()) as session:
+        if args.command == "create-operator":
+            if session.scalar(select(User).where(User.username == args.username)):
+                print(f"account {args.username!r} exists already", file=sys.stderr)
+                return 1
+            password = one_time_password()
+            session.add(User(
+                username=args.username, display_name=args.username, password_hash=hash_password(password),
+                is_operator=True, must_change_password=True,
+            ))
+            session.commit()
+            print(f"one-time password for operator {args.username}: {password}")
+            print("It must be replaced at the first login.")
+            return 0
         if args.command == "list":
             for user in session.scalars(select(User).order_by(User.username)):
-                flags = [f for f, on in (("admin", user.is_admin), ("disabled", user.disabled)) if on]
+                flags = [f for f, on in (("operator", user.is_operator), ("admin", user.is_admin), ("disabled", user.disabled)) if on]
                 print(user.username, *flags)
             return 0
         user = session.scalar(select(User).where(User.username == args.username))

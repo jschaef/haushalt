@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { useTheme } from "next-themes";
-import { Check, Copy, KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
+import { KeyRound, Plus, ShieldCheck, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { Tile } from "@/components/bento";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OneTimePasswordPanel } from "@/components/one-time-password";
 import { PasswordForm } from "@/components/password-form";
 import {
   api,
@@ -194,37 +195,6 @@ function PasswordTile() {
   );
 }
 
-// Shown once after adding a member or resetting a password.
-function OneTimePasswordPanel({ value, onDone }: { value: OneTimePassword; onDone: () => void }) {
-  const { t } = useI18n();
-  const [copied, setCopied] = useState(false);
-  return (
-    <div role="status" className="space-y-2 rounded-xl border-2 border-primary p-3" data-testid="one-time-password">
-      <p className="text-sm font-medium">{t("members.oneTimeTitle", { name: value.user.display_name })}</p>
-      <p className="break-all font-mono text-lg tracking-wide select-all">{value.one_time_password}</p>
-      <p className="text-xs text-muted-foreground">{t("members.oneTimeHint")}</p>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={() =>
-            void navigator.clipboard
-              ?.writeText(value.one_time_password)
-              .then(() => setCopied(true))
-              .catch(() => undefined)
-          }
-        >
-          {copied ? <Check /> : <Copy />} {copied ? t("members.copied") : t("members.copy")}
-        </Button>
-        <Button type="button" size="sm" onClick={onDone}>
-          {t("members.done")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function MemberRow({ user, me, onChanged, onOneTime }: { user: User; me: User; onChanged: () => void; onOneTime: (v: OneTimePassword) => void }) {
   const { t } = useI18n();
   const [busy, setBusy] = useState(false);
@@ -329,7 +299,7 @@ function MembersTile() {
           ))}
         </ul>
       )}
-      {oneTime && <OneTimePasswordPanel value={oneTime} onDone={() => setOneTime(null)} />}
+      {oneTime && <OneTimePasswordPanel name={oneTime.user.display_name} password={oneTime.one_time_password} onDone={() => setOneTime(null)} />}
       {me.data && !me.data.is_admin ? (
         <p className="border-t pt-3 text-sm text-muted-foreground">{t("members.adminOnly")}</p>
       ) : (

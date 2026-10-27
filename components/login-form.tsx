@@ -37,7 +37,8 @@ export function LoginForm() {
     }).catch(() => null);
     if (response?.ok) {
       const body = await response.json().catch(() => ({}));
-      const next = safeNext(params.get("next"));
+      // the operator has its own page (no household)
+      const next = body.is_operator ? "/operator" : safeNext(params.get("next"));
       // a one-time password has to be replaced first
       window.location.href = body.must_change_password ? `/password?next=${encodeURIComponent(next)}` : next;
       return;
