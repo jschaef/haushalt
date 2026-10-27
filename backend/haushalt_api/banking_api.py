@@ -2,15 +2,16 @@
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import banking, config
 from .auth import current_user
-from .db import AppState, BankAccount, BankTransaction, Category, Receipt, RecurringCost, get_session
+from .db import AppState, BankAccount, BankTransaction, Category, MerchantRule, Receipt, RecurringCost, get_session
 from .tags_api import resolve_tags
+from .text import normalize
 
 router = APIRouter(prefix="/api/v1/bank", dependencies=[Depends(current_user)])
 STATUSES = ("review", "receipt", "fixed", "counted", "ignored")
@@ -262,6 +263,75 @@ def put_settings(body: BankSettings, session: Session = Depends(get_session)):
     session.add(state)
     session.commit()
     return body
+
+
+class MerchantIn(BaseModel):
+    keyword: str = Field(min_length=1, max_length=64)
+    category_id: int
+
+
+class MerchantOut(BaseModel):
+    id: int
+    keyword: str
+    category_id: int
+
+
+def _clean_merchant(session: Session, body: MerchantIn, own_id: int | None = None) -> dict:
+    keyword = normalize(body.keyword)
+    if not keyword:
+        raise HTTPException(status_code=422, detail="invalid_keyword")
+    category = session.get(Category, body.category_id)
+    if category is None:
+        raise HTTPException(status_code=422, detail="Unknown category")
+    if category.kind == "income":
+        raise HTTPException(status_code=422, detail="income_category_for_payment")
+    other = session.scalar(select(MerchantRule).where(MerchantRule.keyword == keyword))
+    if other is not None and other.id != own_id:
+        raise HTTPException(status_code=409, detail="merchant_exists")
+    return {"keyword": keyword, "category_id": category.id}
+
+
+def _merchant(session: Session, merchant_id: int) -> MerchantRule:
+    merchant = session.get(MerchantRule, merchant_id)
+    if merchant is None:
+        raise HTTPException(status_code=404, detail="Merchant not found")
+    return merchant
+
+
+def _merchant_out(merchant: MerchantRule) -> MerchantOut:
+    return MerchantOut(id=merchant.id, keyword=merchant.keyword, category_id=merchant.category_id)
+
+
+@router.get("/merchants", response_model=list[MerchantOut])
+def list_merchants(session: Session = Depends(get_session)):
+    return [_merchant_out(m) for m in session.scalars(select(MerchantRule).order_by(MerchantRule.keyword))]
+
+
+# a changed list re-matches what the app decided (in the background)
+@router.post("/merchants", response_model=MerchantOut, status_code=201)
+def create_merchant(body: MerchantIn, background: BackgroundTasks, session: Session = Depends(get_session)):
+    merchant = MerchantRule(**_clean_merchant(session, body))
+    session.add(merchant)
+    session.commit()
+    background.add_task(banking.rematch_later)
+    return _merchant_out(merchant)
+
+
+@router.put("/merchants/{merchant_id}", response_model=MerchantOut)
+def update_merchant(merchant_id: int, body: MerchantIn, background: BackgroundTasks, session: Session = Depends(get_session)):
+    merchant = _merchant(session, merchant_id)
+    for field, value in _clean_merchant(session, body, merchant.id).items():
+        setattr(merchant, field, value)
+    session.commit()
+    background.add_task(banking.rematch_later)
+    return _merchant_out(merchant)
+
+
+@router.delete("/merchants/{merchant_id}", status_code=204)
+def delete_merchant(merchant_id: int, background: BackgroundTasks, session: Session = Depends(get_session)):
+    session.delete(_merchant(session, merchant_id))
+    session.commit()
+    background.add_task(banking.rematch_later)
 
 
 @router.post("/rematch")

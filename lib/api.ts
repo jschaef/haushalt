@@ -193,6 +193,10 @@ export type BankTransaction = {
   tag_ids: number[];
 };
 
+// a word in a bank counterparty that counts payments in a category
+export type Merchant = { id: number; keyword: string; category_id: number };
+export type MerchantInput = { keyword: string; category_id: number };
+
 export type BankSettings = {
   // bookings from this amount on are suggested as one-offs; 0: none
   one_off_threshold_cents: number;
@@ -386,6 +390,10 @@ export const api = {
   markOneOff: (id: number, oneOff: boolean) =>
     request<BankTransaction>(`bank/transactions/${id}/one-off`, json("PUT", { one_off: oneOff })),
   bankSettings: () => request<BankSettings>("bank/settings"),
+  merchants: () => request<Merchant[]>("bank/merchants"),
+  createMerchant: (body: MerchantInput) => request<Merchant>("bank/merchants", json("POST", body)),
+  updateMerchant: (id: number, body: MerchantInput) => request<Merchant>(`bank/merchants/${id}`, json("PUT", body)),
+  deleteMerchant: (id: number) => request<void>(`bank/merchants/${id}`, { method: "DELETE" }),
   saveBankSettings: (body: BankSettings) => request<BankSettings>("bank/settings", json("PUT", body)),
   deleteTransaction: (id: number) => request<void>(`bank/transactions/${id}`, { method: "DELETE" }),
 };
