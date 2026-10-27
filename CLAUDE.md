@@ -78,8 +78,13 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 - Utilities (`utilities.py`, `utilities_api.py`): meters, readings (must count
   up), tariffs, bills. The dashboard counts the instalments only; consumption
   costs and the settlement forecast live on the utilities page (no double
-  counting). New columns on existing tables need an entry in
-  `db._LATER_COLUMNS` (create_all never alters tables).
+  counting).
+- Schema changes (Jochen, 2026-10-27: Alembic): every change is a migration
+  in `backend/haushalt_api/migrations/versions` (`backend/alembic.ini`,
+  `alembic revision --autogenerate`, check the result); `db.migrate()`
+  runs them at start. A database from before Alembic gets `create_all` +
+  the frozen `db._LATER_COLUMNS` and is stamped as baseline `0001`.
+  `tests/test_migrations.py` fails when models and migrations differ.
 - Automatic meter readings (`smartmeter.py`, `smartmeter_api.py`): device
   token push to `/api/v1/ingest/reading` (the gateway's only path without
   session/Origin, it forwards the device's Authorization header) and polling

@@ -5,6 +5,7 @@ uploaded them. SQLite by default, any SQLAlchemy URL works (PostgreSQL).
 """
 
 from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Iterator
 
 from sqlalchemy import (
@@ -402,11 +403,34 @@ def _sqlite_pragmas(dbapi_connection, _record):
         cursor.close()
 
 
+MIGRATIONS = Path(__file__).parent / "migrations"
+# the schema the migrations started from (databases from before Alembic)
+BASELINE = "0001"
+
+
+def migrate() -> None:
+    """Brings the schema to the newest migration. A database from before
+    Alembic first gets what the baseline added (create_all for new tables,
+    _LATER_COLUMNS for new columns) and is stamped as the baseline."""
+    from alembic import command
+    from alembic.config import Config
+
+    with engine.begin() as connection:
+        alembic = Config()
+        alembic.set_main_option("script_location", str(MIGRATIONS))
+        alembic.attributes["connection"] = connection
+        tables = set(inspect(connection).get_table_names())
+        if "alembic_version" not in tables and "users" in tables:
+            Base.metadata.create_all(connection)
+            _add_missing_columns(connection)
+            command.stamp(alembic, BASELINE)
+        command.upgrade(alembic, "head")
+
+
 def init_db() -> None:
     if config.DATABASE_URL.startswith("sqlite:///"):
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(engine)
-    _add_missing_columns()
+    migrate()
     with SessionLocal() as session:
         # databases from before the admin role: the first account becomes admin
         if session.scalar(select(User.id).where(User.is_admin)) is None:
@@ -471,8 +495,9 @@ def _reopen_income(session: Session) -> None:
     session.add(AppState(key="income_v1", value=datetime.now(timezone.utc).isoformat()))
 
 
-# Columns added after the first release. create_all() creates new tables but
-# never alters existing ones, so older databases get them here.
+# Columns added after the first release, before Alembic: databases from that
+# time get them before they are stamped as the baseline (migrate). Frozen -
+# schema changes now are Alembic migrations (haushalt_api/migrations).
 _LATER_COLUMNS = {
     "users": {
         "is_admin": "BOOLEAN NOT NULL DEFAULT FALSE",
@@ -501,14 +526,17 @@ _LATER_COLUMNS = {
 }
 
 
-def _add_missing_columns() -> None:
-    inspector = inspect(engine)
-    with engine.begin() as connection:
-        for table, columns in _LATER_COLUMNS.items():
-            existing = {c["name"] for c in inspector.get_columns(table)}
-            for name, ddl in columns.items():
-                if name not in existing:
-                    connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+def _add_missing_columns(connection=None) -> None:
+    if connection is None:
+        with engine.begin() as own:
+            _add_missing_columns(own)
+        return
+    inspector = inspect(connection)
+    for table, columns in _LATER_COLUMNS.items():
+        existing = {c["name"] for c in inspector.get_columns(table)}
+        for name, ddl in columns.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def get_session() -> Iterator[Session]:
