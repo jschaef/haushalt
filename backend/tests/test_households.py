@@ -111,13 +111,14 @@ def test_routes_list_covers_the_api():
     """A new route with an id must join ROUTES above."""
     from fastapi.routing import APIRoute
 
-    from haushalt_api import banking_api, smartmeter_api, tags_api, utilities_api
+    from haushalt_api import banking_api, operator_api, smartmeter_api, tags_api, utilities_api
     from haushalt_api.main import app
 
     routes = [r for r in app.router.routes if isinstance(r, APIRoute)]
-    for module in (banking_api, smartmeter_api, tags_api, utilities_api):
+    for module in (banking_api, operator_api, smartmeter_api, tags_api, utilities_api):
         routes += module.router.routes
-    with_ids = {(m, r.path) for r in routes if "{" in r.path for m in r.methods}
+    # the operator's routes have tests of their own (test_operator.py)
+    with_ids = {(m, r.path) for r in routes if "{" in r.path and not r.path.startswith("/api/v1/operator") for m in r.methods}
     assert with_ids == {(m, p) for m, p, _ in ROUTES}
 
 

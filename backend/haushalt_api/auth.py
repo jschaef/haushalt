@@ -147,8 +147,22 @@ def session_user(
 
 
 def current_user(user: User = Depends(session_user)) -> User:
+    """A member of a household; the operator has none and only reaches the
+    operator routes (operator_user)."""
     if user.must_change_password:
         raise HTTPException(status_code=403, detail="password_change_required")
+    if user.is_operator or user.household_id is None:
+        raise HTTPException(status_code=403, detail="operator_only")
+    return user
+
+
+def operator_user(user: User = Depends(session_user)) -> User:
+    """The operator: creates households and their first admin, sees no
+    household data."""
+    if user.must_change_password:
+        raise HTTPException(status_code=403, detail="password_change_required")
+    if not user.is_operator:
+        raise HTTPException(status_code=403, detail="Only the operator may do this")
     return user
 
 

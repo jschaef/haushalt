@@ -3,7 +3,13 @@ import { SESSION_COOKIE, apiUrl, cookieSecure } from "@/lib/session";
 
 // Shared by the login and signup route handlers (app/api/auth/*).
 
-export type TokenResponse = { access_token: string; token_type: string; expires_at: number; must_change_password?: boolean };
+export type TokenResponse = {
+  access_token: string;
+  token_type: string;
+  expires_at: number;
+  must_change_password?: boolean;
+  is_operator?: boolean;
+};
 
 // POSTs JSON to the API and turns a token answer into the session cookie.
 // The token itself never reaches the browser's JavaScript.
@@ -24,7 +30,10 @@ export async function tokenRequest(path: string, body: unknown, bearer?: string)
     return NextResponse.json({ detail: data.detail ?? "Request failed" }, { status: upstream.status });
   }
   const token = data as TokenResponse;
-  return setSession(NextResponse.json({ ok: true, must_change_password: Boolean(token.must_change_password) }), token);
+  return setSession(
+    NextResponse.json({ ok: true, must_change_password: Boolean(token.must_change_password), is_operator: Boolean(token.is_operator) }),
+    token,
+  );
 }
 
 export function setSession(response: NextResponse, token: TokenResponse) {

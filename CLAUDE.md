@@ -69,6 +69,14 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   up "Mein Haushalt"; an existing database became household 1.
   `tests/test_households.py` calls every route with an id from another
   household (404) - a new route with an id must join its ROUTES list.
+- Operator (Jochen, 2026-10-27; `operator_api.py`, `/operator` page): a
+  separate account without household (`is_operator`, created by
+  `python -m haushalt_api.admin create-operator <name>` with a one-time
+  password) creates households with their first admin (one-time
+  password), renames, disables (members get 401 `household_disabled`)
+  and resets a household admin's password. Household routes answer it
+  403 `operator_only` (the client then opens `/operator`); the first
+  signup counts household members only.
 - All members of a household share its data; receipts remember the uploader.
 - Members (Jochen, 2026-10-23): the first account is admin; only admins add
   members, reset passwords and disable accounts. Adding and resetting give a

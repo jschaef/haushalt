@@ -80,6 +80,21 @@ docker compose -f deployment/compose.yaml exec api python -m haushalt_api.admin 
 docker compose -f deployment/compose.yaml exec api python -m haushalt_api.admin make-admin <username>
 ```
 
+### Several households (operator)
+
+One installation can hold several households, each sees only its own data.
+The first signup sets up the first household. Further households are created
+by the operator, a separate account without household data:
+
+```bash
+docker compose -f deployment/compose.yaml exec api python -m haushalt_api.admin create-operator <username>
+```
+
+It prints a one-time password that must be replaced at the first login. The
+operator then lands on `/operator`: create a household together with its first
+admin (who gets a one-time password), rename or disable households, reset a
+household admin's password. Members are managed by each household's admins.
+
 ### Data and backups
 
 - Database: volume `haushalt-pg`. Backup: `docker compose -f deployment/compose.yaml exec db pg_dump -U haushalt haushalt > haushalt.sql`
