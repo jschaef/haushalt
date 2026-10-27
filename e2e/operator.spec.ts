@@ -10,6 +10,9 @@ const OPERATOR = { username: "betreiber", password: "Leuchtturm-am-Deich-27" };
 test("the operator creates a household with its admin and disables it", async ({ page }, info) => {
   // the first household exists (its signup), then the operator logs in
   await login(page);
+  // leave the app first: the dashboard's requests would answer 401 once the
+  // cookie is gone and send the page to /login themselves (aborting goto)
+  await page.goto("about:blank");
   await page.context().clearCookies();
   await page.goto("/login");
   await page.getByLabel(/Benutzername/).fill(OPERATOR.username);
