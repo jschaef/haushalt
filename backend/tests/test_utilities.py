@@ -168,6 +168,5 @@ def test_migration_adds_meter_column(tmp_path, monkeypatch):
             "amount_cents INTEGER, interval_months INTEGER, start_on DATE, end_on DATE)"
         ))
     monkeypatch.setattr(db_module, "engine", engine)
-    db_module.Base.metadata.create_all(engine)
-    db_module._add_missing_columns()
+    db_module.migrate()
     assert "meter_id" in {c["name"] for c in inspect(engine).get_columns("recurring_costs")}

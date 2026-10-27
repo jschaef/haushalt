@@ -135,6 +135,5 @@ def test_migration_adds_account_column(tmp_path, monkeypatch):
             "receipt_id INTEGER, recurring_id INTEGER, category_id INTEGER, created_at TIMESTAMP)"
         ))
     monkeypatch.setattr(db_module, "engine", engine)
-    db_module.Base.metadata.create_all(engine)
-    db_module._add_missing_columns()
+    db_module.migrate()
     assert {"account_id", "statement_on", "settles_account_id"} <= {c["name"] for c in inspect(engine).get_columns("bank_transactions")}

@@ -155,8 +155,7 @@ def test_migration_adds_meter_source_columns(tmp_path, monkeypatch):
         connection.execute(text("CREATE TABLE meters (id INTEGER PRIMARY KEY, name VARCHAR(128), kind VARCHAR(16), unit VARCHAR(16), meter_number VARCHAR(64), category_id INTEGER)"))
         connection.execute(text("INSERT INTO meters (name, kind, unit, meter_number) VALUES ('Alt', 'gas', 'm³', '')"))
     monkeypatch.setattr(db_module, "engine", engine)
-    db_module.Base.metadata.create_all(engine)
-    db_module._add_missing_columns()
+    db_module.migrate()
     columns = {c["name"] for c in inspect(engine).get_columns("meters")}
     assert {"ingest_token_hash", "source_url", "source_path", "last_ingest_at", "last_ingest_error"} <= columns
     with engine.connect() as connection:

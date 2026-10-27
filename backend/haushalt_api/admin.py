@@ -14,6 +14,7 @@ import sys
 from sqlalchemy import select
 
 from .auth import hash_password
+from . import tenancy
 from .db import SessionLocal, User, init_db
 from .passwords import one_time_password
 
@@ -30,7 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     init_db()
-    with SessionLocal() as session:
+    # the operator's tool: accounts of every household
+    with tenancy.unscoped(SessionLocal()) as session:
         if args.command == "list":
             for user in session.scalars(select(User).order_by(User.username)):
                 flags = [f for f, on in (("admin", user.is_admin), ("disabled", user.disabled)) if on]

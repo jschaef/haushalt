@@ -97,9 +97,9 @@ def test_months_of_the_period(client, auth):
     assert months[0]["income_cents"] == 100000 and months[-1]["spending_cents"] == 1000
 
 
-def test_incoming_bookings_ignored_before_are_reopened_once():
-    with SessionLocal() as session:
-        session.delete(session.get(AppState, "income_v1"))
+def test_incoming_bookings_ignored_before_are_reopened_once(session):
+    session.delete(session.get(AppState, "income_v1"))
+    if True:
         session.add(BankAccount(name="Spar", iban=GIRO))
         common = {"booked_on": d(1), "counterparty": "", "purpose": "", "status": "ignored"}
         session.add_all([
@@ -108,12 +108,13 @@ def test_incoming_bookings_ignored_before_are_reopened_once():
             BankTransaction(fingerprint="c", amount_cents=-500, iban="", **common),            # payment ignored by a person
         ])
         session.commit()
-        db_module._reopen_income(session)
-        session.commit()
+        db_module.init_db()  # runs it (in every household) as the marker is gone
+        session.expire_all()
         status = {tx.fingerprint: tx.status for tx in session.query(BankTransaction)}
         assert status == {"a": "review", "b": "ignored", "c": "ignored"}
         # once only: a later decision to ignore stays
         session.query(BankTransaction).filter_by(fingerprint="a").one().status = "ignored"
         session.commit()
-        db_module._reopen_income(session)
+        db_module.init_db()
+        session.expire_all()
         assert session.query(BankTransaction).filter_by(fingerprint="a").one().status == "ignored"

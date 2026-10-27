@@ -55,7 +55,21 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   deleted after one year (`receipts.expire_files`, daily). Tests run on
   SQLite; set `HAUSHALT_TEST_DATABASE_URL` to run them on PostgreSQL (CI
   job `backend-postgres`). PostgreSQL enforces string lengths - truncate.
-- All household members share all data; receipts remember the uploader.
+- Households (Jochen, 2026-10-27; `tenancy.py`, migration `0002`): several
+  households in one installation, one login = one household (usernames
+  unique across all). Every data table is `HouseholdOwned`; a session
+  bound to a household (`session_user` binds it) gets `household_id =`
+  on every ORM select/update/delete and on every new row, an unbound one
+  sees nothing. Reading across households needs `tenancy.everywhere()`
+  or `tenancy.unscoped()` (login, CLI, receipt file expiry, meter
+  polling, device ingest). Background work gets the household id
+  (`banking.rematch_later(household_id)`). Unique keys (category key,
+  store, rules, merchant keyword, tag name, booking fingerprint) and
+  settings (`HouseholdSetting`) are per household. The first signup sets
+  up "Mein Haushalt"; an existing database became household 1.
+  `tests/test_households.py` calls every route with an id from another
+  household (404) - a new route with an id must join its ROUTES list.
+- All members of a household share its data; receipts remember the uploader.
 - Members (Jochen, 2026-10-23): the first account is admin; only admins add
   members, reset passwords and disable accounts. Adding and resetting give a
   one-time password (`must_change_password`): until it is replaced every
@@ -82,8 +96,9 @@ this on every push and nightly (`.github/workflows/ci.yml`).
 - Schema changes (Jochen, 2026-10-27: Alembic): every change is a migration
   in `backend/haushalt_api/migrations/versions` (`backend/alembic.ini`,
   `alembic revision --autogenerate`, check the result); `db.migrate()`
-  runs them at start. A database from before Alembic gets `create_all` +
-  the frozen `db._LATER_COLUMNS` and is stamped as baseline `0001`.
+  runs them at start. The baseline `0001` only creates missing tables and
+  adds the frozen `LATER_COLUMNS`, so it also completes a database from
+  before Alembic.
   `tests/test_migrations.py` fails when models and migrations differ.
 - Automatic meter readings (`smartmeter.py`, `smartmeter_api.py`): device
   token push to `/api/v1/ingest/reading` (the gateway's only path without
@@ -138,7 +153,7 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   one-offs enter no category, average, chart, balance, savings rate, open
   sums or `saved_cents`; `summary.one_off` reports their sums in and out
   (tile line "Einmalig"). The bank page suggests amounts from the
-  threshold in `app_state` (`/bank/settings`, default 1,000 €, 0 = off).
+  threshold in the household settings (`/bank/settings`, default 1,000 €, 0 = off).
 - Merchants (Jochen, 2026-10-27; `MerchantRule`, `/bank/merchants`,
   settings tile): a keyword found as whole words in the normalized
   counterparty (purpose if it is empty) counts a payment in its category,

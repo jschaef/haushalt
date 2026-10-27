@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking, banking_api, config, receipts, smartmeter, smartmeter_api, stats, tags_api, utilities_api
+from . import banking, banking_api, config, receipts, smartmeter, smartmeter_api, stats, tags_api, tenancy, utilities_api
 from .auth import (
     TokenClaims,
     admin_user,
@@ -25,7 +25,22 @@ from .auth import (
     verify_password,
 )
 from .passwords import MAX_LENGTH, one_time_password, problems
-from .db import AppState, BankTransaction, Category, Meter, Receipt, RecurringCost, SessionLocal, Store, User, get_session, init_db
+from .db import (
+    BankTransaction,
+    Category,
+    Household,
+    Meter,
+    Receipt,
+    RecurringCost,
+    SessionLocal,
+    Store,
+    User,
+    create_household,
+    get_session,
+    get_setting,
+    init_db,
+    set_setting,
+)
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
 from .tags_api import resolve_tags
@@ -48,7 +63,7 @@ async def daily_housekeeping() -> None:
     """Once at start and then daily: delete receipt files past retention."""
     while True:
         try:
-            with SessionLocal() as session:
+            with tenancy.unscoped(SessionLocal()) as session:
                 expired = await asyncio.to_thread(receipts.expire_files, session)
             if expired:
                 logger.info("deleted %s receipt files after the retention period", expired)
@@ -304,6 +319,10 @@ def check_category(session: Session, category_id: int | None) -> None:
         raise HTTPException(status_code=422, detail=f"Unknown category {category_id}")
 
 
+# the household the first account sets up (Jochen, 2026-10-27)
+FIRST_HOUSEHOLD = "Mein Haushalt"
+
+
 # --- public ------------------------------------------------------------------
 
 
@@ -315,7 +334,7 @@ def health():
 @app.get(f"{PREFIX}/setup")
 def setup_state(session: Session = Depends(get_session)):
     """Whether the first user still has to be created (shows signup)."""
-    users = session.scalar(select(func.count(User.id))) or 0
+    users = session.scalar(tenancy.everywhere(select(func.count(User.id)))) or 0
     return {"needs_first_user": users == 0, "signup_open": users == 0 or config.ALLOW_SIGNUP}
 
 
@@ -324,7 +343,8 @@ def login(body: Credentials, request: Request, session: Session = Depends(get_se
     key = f"{body.username.lower()}|{request.client.host if request.client else ''}"
     if login_limiter.blocked(key):
         raise HTTPException(status_code=429, detail="Too many failed logins, try again later")
-    user = session.scalar(select(User).where(User.username == body.username))
+    # the username names the household: look in all of them
+    user = session.scalar(tenancy.everywhere(select(User).where(User.username == body.username)))
     if user is None or not verify_password(body.password, user.password_hash):
         login_limiter.failure(key)
         raise HTTPException(status_code=401, detail="Invalid username or password")
@@ -336,12 +356,17 @@ def login(body: Credentials, request: Request, session: Session = Depends(get_se
 
 @app.post(f"{PREFIX}/signup", status_code=201)
 def signup(body: NewUser, session: Session = Depends(get_session)):
-    """Open while no user exists (or HAUSHALT_ALLOW_SIGNUP is set)."""
-    users = session.scalar(select(func.count(User.id))) or 0
+    """Open while no user exists (or HAUSHALT_ALLOW_SIGNUP is set). The first
+    account sets up the first household and runs it; later ones (with
+    HAUSHALT_ALLOW_SIGNUP) join that household."""
+    users = session.scalar(tenancy.everywhere(select(func.count(User.id)))) or 0
     if users and not config.ALLOW_SIGNUP:
         raise HTTPException(status_code=403, detail="Signup is closed, ask a household member")
     check_password(body.password, body.username, body.display_name)
-    # the first account runs the household
+    household = session.scalar(select(Household).order_by(Household.id).limit(1))
+    if household is None:
+        household = create_household(session, FIRST_HOUSEHOLD)
+    tenancy.bind(session, household.id)
     user = _create_user(session, body.username, body.display_name, body.password, is_admin=users == 0)
     return token_out(user)
 
@@ -349,9 +374,11 @@ def signup(body: NewUser, session: Session = Depends(get_session)):
 def _create_user(
     session: Session, username: str, display_name: str, password: str, *, is_admin: bool = False, must_change: bool = False
 ) -> User:
-    if session.scalar(select(User).where(User.username == username)):
+    # usernames are unique in all households (the login names none)
+    if session.scalar(tenancy.everywhere(select(User).where(User.username == username))):
         raise HTTPException(status_code=409, detail="Username already taken")
     user = User(
+        household_id=tenancy.current(session),
         username=username,
         display_name=display_name or username,
         password_hash=hash_password(password),
@@ -409,6 +436,33 @@ def update_me(body: UserPatch, user: User = Depends(current_user), session: Sess
         user.locale = body.locale
     session.commit()
     return user_out(user)
+
+
+class HouseholdIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+
+
+class HouseholdOut(HouseholdIn):
+    id: int
+
+
+@app.get(f"{PREFIX}/household", response_model=HouseholdOut)
+def get_household(user: User = Depends(current_user), session: Session = Depends(get_session)):
+    """The household of the logged-in member."""
+    household = session.get(Household, user.household_id) if user.household_id else None
+    if household is None:
+        raise HTTPException(status_code=404, detail="No household")
+    return HouseholdOut(id=household.id, name=household.name)
+
+
+@app.put(f"{PREFIX}/household", response_model=HouseholdOut)
+def rename_household(body: HouseholdIn, admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    household = session.get(Household, admin.household_id) if admin.household_id else None
+    if household is None:
+        raise HTTPException(status_code=404, detail="No household")
+    household.name = " ".join(body.name.split())
+    session.commit()
+    return HouseholdOut(id=household.id, name=household.name)
 
 
 @app.get(f"{PREFIX}/users", response_model=list[UserOut])
@@ -599,7 +653,7 @@ def confirm_receipt(
     session.commit()
     # a booking the app counted by its merchant (a supermarket) belongs to
     # this receipt now, else the purchase would count twice
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
     return receipt_out(receipt, session)
 
 
@@ -641,7 +695,7 @@ def create_recurring(
     session.add(cost)
     session.commit()
     # bookings the app decided by itself may belong to this cost now
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
     return recurring_out(cost)
 
 
@@ -663,7 +717,7 @@ def update_recurring(
     if body.tag_ids is not None:
         cost.tags = resolve_tags(session, body.tag_ids)
     session.commit()
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
     return recurring_out(cost)
 
 
@@ -677,7 +731,7 @@ def delete_recurring(
     reopen_bookings(session, BankTransaction.recurring_id == cost.id)
     session.delete(cost)
     session.commit()
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
 
 
 # --- statistics --------------------------------------------------------------
@@ -707,8 +761,6 @@ def put_reset_date(body: ResetDate, _admin: User = Depends(admin_user), session:
     """Household-wide, so only admins move it."""
     if body.since is not None and body.since > date.today():
         raise HTTPException(status_code=422, detail="reset_in_future")
-    state = session.get(AppState, stats.SINCE_KEY) or AppState(key=stats.SINCE_KEY)
-    state.value = body.since.isoformat() if body.since else ""
-    session.add(state)
+    set_setting(session, stats.SINCE_KEY, body.since.isoformat() if body.since else "")
     session.commit()
     return body

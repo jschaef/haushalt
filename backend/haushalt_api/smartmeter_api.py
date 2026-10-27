@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, selectinload
 
-from . import smartmeter
+from . import smartmeter, tenancy
 from .auth import current_user
 from .db import Meter, get_session
 
@@ -97,6 +97,8 @@ def ingest_reading(
     meter = smartmeter.meter_for_token(session, token.strip()) if scheme.lower() == "bearer" else None
     if meter is None:
         raise HTTPException(status_code=401, detail="Unknown device token")
+    # the token names the meter and with it the household
+    tenancy.bind(session, meter.household_id)
     meter = _meter(session, meter.id)
     day = body.read_at.date() if body.read_at else date.today()
     try:

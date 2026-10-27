@@ -2,14 +2,8 @@ from datetime import date
 
 import pytest
 
-from haushalt_api.db import Category, Receipt, ReceiptItem, RecurringCost, SessionLocal, Store, User
+from haushalt_api.db import Category, Receipt, ReceiptItem, RecurringCost, Store, User
 from haushalt_api.stats import Period, overlap_days, resolve_period, summary
-
-
-@pytest.fixture
-def session():
-    with SessionLocal() as s:
-        yield s
 
 
 def category_id(session, key):

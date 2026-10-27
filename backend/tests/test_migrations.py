@@ -1,5 +1,5 @@
 """Alembic: the migrations build exactly the schema of the models, and a
-database from before Alembic is completed and stamped as the baseline."""
+database from before Alembic is completed by the baseline."""
 
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -18,7 +18,7 @@ def test_migrations_match_the_models():
         assert context.get_current_revision() is not None
 
 
-def test_database_from_before_alembic_is_stamped(tmp_path, monkeypatch):
+def test_database_from_before_alembic_is_completed(tmp_path, monkeypatch):
     old = create_engine(f"sqlite:///{tmp_path / 'old.db'}")
     with old.begin() as connection:
         connection.execute(text(
