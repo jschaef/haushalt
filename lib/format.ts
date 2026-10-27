@@ -11,6 +11,18 @@ export function money(cents: number, locale: Locale, currency = "EUR", compact =
   }).format(cents / 100);
 }
 
+// today as YYYY-MM-DD in local time (toISOString would use UTC)
+export function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// a typed period the API accepts: a start, not after today, not after the end
+export function validCustomRange(start: string, end: string, today: string = localToday()): boolean {
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  return iso.test(start) && start <= today && (end === "" || (iso.test(end) && end >= start));
+}
+
 export function shortDate(iso: string | null, locale: Locale): string {
   if (!iso) return "";
   const [y, m, d] = iso.split("-").map(Number);

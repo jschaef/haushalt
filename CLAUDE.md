@@ -167,6 +167,10 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   admins only, not in the future, null lifts it): the whole dashboard
   starts there - every period of the summary is cut to it, a previous
   period before it is not compared (`previous_total_cents` 0). Data stays.
+- Custom period (Jochen, 2026-10-27; `range=custom&start=&end=`,
+  `stats.custom_period`): start and optional end (today, never later);
+  it wins over the reset date. The dashboard remembers the chosen range
+  per browser (localStorage `haushalt.dashboardRange`).
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,

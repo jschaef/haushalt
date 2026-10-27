@@ -23,7 +23,7 @@ import {
   type User,
 } from "@/lib/api";
 import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
-import { shortDate } from "@/lib/format";
+import { localToday, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
@@ -955,12 +955,6 @@ function MerchantsTile() {
       )}
     </Tile>
   );
-}
-
-// today as YYYY-MM-DD in local time (toISOString would use UTC)
-function localToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function ResetTile() {

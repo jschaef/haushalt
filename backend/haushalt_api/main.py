@@ -739,11 +739,21 @@ def delete_recurring(
 
 @app.get(f"{PREFIX}/stats/summary")
 def stats_summary(
-    range: str = Query(default="30d", pattern=r"^(7d|30d|90d|365d|ytd|all)$"),
+    range: str = Query(default="30d", pattern=r"^(7d|30d|90d|365d|ytd|all|custom)$"),
+    # range=custom: from start to end (today if left out)
+    start: date | None = None,
+    end: date | None = None,
     _user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ):
-    return stats.summary(session, stats.resolve_period(session, range))
+    if range != "custom":
+        return stats.summary(session, stats.resolve_period(session, range))
+    if start is None:
+        raise HTTPException(status_code=422, detail="start_required")
+    try:
+        return stats.summary(session, stats.custom_period(start, end))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 class ResetDate(BaseModel):

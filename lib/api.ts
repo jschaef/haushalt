@@ -257,7 +257,9 @@ export type OneTimePassword = { user: User; one_time_password: string };
 
 export type Store = { id: number; name: string; default_category_id: number | null; receipts: number; total_cents: number };
 
-export type Range = "7d" | "30d" | "90d" | "365d" | "ytd" | "all";
+export type Range = "7d" | "30d" | "90d" | "365d" | "ytd" | "all" | "custom";
+// range "custom": YYYY-MM-DD, end empty = today
+export type CustomRange = { start: string; end: string };
 
 export class ApiError extends Error {
   constructor(
@@ -344,7 +346,12 @@ export const api = {
   updateRecurring: (id: number, body: RecurringBody) =>
     request<Recurring>(`recurring/${id}`, json("PUT", body)),
   deleteRecurring: (id: number) => request<void>(`recurring/${id}`, { method: "DELETE" }),
-  summary: (range: Range) => request<Summary>(`stats/summary?range=${range}`),
+  summary: (range: Range, custom?: CustomRange) =>
+    request<Summary>(
+      range === "custom" && custom
+        ? `stats/summary?range=custom&start=${encodeURIComponent(custom.start)}${custom.end ? `&end=${encodeURIComponent(custom.end)}` : ""}`
+        : `stats/summary?range=${range}`,
+    ),
   resetDate: () => request<{ since: string | null }>("stats/since"),
   // admins only; null lifts the reset date
   saveResetDate: (since: string | null) => request<{ since: string | null }>("stats/since", json("PUT", { since })),

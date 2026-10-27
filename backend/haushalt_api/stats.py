@@ -72,6 +72,17 @@ def reset_date(session: Session) -> date | None:
     return date.fromisoformat(value) if value else None
 
 
+def custom_period(start: date, end: date | None, today: date | None = None) -> Period:
+    """A period a person typed (end: today if left out, never in the
+    future). It is not cut to the reset date (Jochen, 2026-10-27: the
+    chosen period wins)."""
+    today = today or date.today()
+    end = min(end or today, today)
+    if start > end:
+        raise ValueError("start_after_end")
+    return Period(start, end)
+
+
 def resolve_period(session: Session, range_key: str, today: date | None = None) -> Period:
     today = today or date.today()
     if range_key == "ytd":

@@ -93,15 +93,14 @@ def test_links_made_before_are_learned_once(session):
     session.commit()
     from haushalt_api.db import RecurringCost
 
-    if True:
-        recurring = RecurringCost(name="Internet", amount_cents=4200, interval_months=1, start_on=d(100))
-        session.add(recurring)
-        session.flush()
-        common = {"booked_on": d(1), "purpose": "", "iban": "", "amount_cents": -4237}
-        session.add_all([
-            BankTransaction(fingerprint="a", counterparty="Scheune Internet", status="fixed", recurring_id=recurring.id, **common),
-            BankTransaction(fingerprint="b", counterparty="Scheune Internet", status="fixed", recurring_id=recurring.id, **common),
-        ])
-        session.commit()
-        db_module.init_db()
-        assert [(r.pattern, r.recurring_id) for r in session.query(RecurringRule)] == [("bank:scheune internet", recurring.id)]
+    recurring = RecurringCost(name="Internet", amount_cents=4200, interval_months=1, start_on=d(100))
+    session.add(recurring)
+    session.flush()
+    common = {"booked_on": d(1), "purpose": "", "iban": "", "amount_cents": -4237}
+    session.add_all([
+        BankTransaction(fingerprint="a", counterparty="Scheune Internet", status="fixed", recurring_id=recurring.id, **common),
+        BankTransaction(fingerprint="b", counterparty="Scheune Internet", status="fixed", recurring_id=recurring.id, **common),
+    ])
+    session.commit()
+    db_module.init_db()
+    assert [(r.pattern, r.recurring_id) for r in session.query(RecurringRule)] == [("bank:scheune internet", recurring.id)]
