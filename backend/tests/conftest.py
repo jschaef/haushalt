@@ -18,6 +18,7 @@ else:
     os.environ.pop("HAUSHALT_DATABASE_URL", None)
 
 import pytest  # noqa: E402
+from sqlalchemy import text  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from haushalt_api.db import Base, engine, init_db  # noqa: E402
@@ -36,6 +37,8 @@ PNG_1PX = bytes.fromhex(
 @pytest.fixture(autouse=True)
 def fresh_db():
     Base.metadata.drop_all(engine)
+    with engine.begin() as connection:
+        connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
     init_db()
     login_limiter._failures.clear()
     yield
