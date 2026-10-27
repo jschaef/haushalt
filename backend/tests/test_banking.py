@@ -232,8 +232,11 @@ def test_deleting_the_receipt_reopens_the_booking(client, auth, png):
 def test_rematch_after_new_receipt(client, auth, png):
     import_file(client, auth, csv_rows((d(1), "Edeka", "Karte", "-8,80")))
     assert client.post("/api/v1/bank/rematch", headers=auth).json() == {"matched": 0}
+    # counted as groceries by its merchant until the receipt is confirmed:
+    # confirming re-matches, so the purchase does not count twice
     confirmed_receipt(client, auth, png, "Edeka", 880, d(1))
-    assert client.post("/api/v1/bank/rematch", headers=auth).json() == {"matched": 1}
+    [tx] = client.get("/api/v1/bank/transactions", headers=auth).json()
+    assert tx["status"] == "receipt" and tx["category_id"] is None
 
 
 def test_decision_validation(client, auth, png):

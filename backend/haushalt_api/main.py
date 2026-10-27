@@ -589,12 +589,17 @@ def patch_receipt(
 
 
 @app.post(f"{PREFIX}/receipts/{{receipt_id}}/confirm", response_model=ReceiptOut)
-def confirm_receipt(receipt_id: int, _user: User = Depends(current_user), session: Session = Depends(get_session)):
+def confirm_receipt(
+    receipt_id: int, background: BackgroundTasks, _user: User = Depends(current_user), session: Session = Depends(get_session)
+):
     receipt = get_receipt(session, receipt_id)
     if receipt.purchased_on is None:
         raise HTTPException(status_code=422, detail="Purchase date missing")
     receipt.status = "confirmed"
     session.commit()
+    # a booking the app counted by its merchant (a supermarket) belongs to
+    # this receipt now, else the purchase would count twice
+    background.add_task(banking.rematch_later)
     return receipt_out(receipt, session)
 
 

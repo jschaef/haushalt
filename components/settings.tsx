@@ -11,7 +11,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PasswordForm } from "@/components/password-form";
-import { api, type BankAccount, type BankAccountInput, type Category, type OneTimePassword, type Tag, type User } from "@/lib/api";
+import {
+  api,
+  spendingCategories,
+  type BankAccount,
+  type BankAccountInput,
+  type Category,
+  type Merchant,
+  type OneTimePassword,
+  type Tag,
+  type User,
+} from "@/lib/api";
 import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -770,6 +780,136 @@ function AccountsTile() {
   );
 }
 
+function merchantError(error: unknown, t: (key: MessageKey) => string): string {
+  const message = (error as Error).message;
+  return message === "merchant_exists" ? t("merchants.exists") : message === "invalid_keyword" ? t("merchants.invalid") : message;
+}
+
+function MerchantRow({ merchant, categories, onChanged }: { merchant: Merchant; categories: Category[]; onChanged: () => void }) {
+  const { t, locale } = useI18n();
+  const uid = useId();
+  const [busy, setBusy] = useState(false);
+
+  async function run(action: () => Promise<unknown>, message: MessageKey) {
+    setBusy(true);
+    try {
+      await action();
+      toast.success(t(message));
+      onChanged();
+    } catch (error) {
+      toast.error(merchantError(error, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/50 px-3 py-2" data-testid="merchant-row">
+      <span className="min-w-24 flex-1 truncate font-medium">{merchant.keyword}</span>
+      <Label htmlFor={`${uid}-category`} className="sr-only">
+        {t("merchants.categoryFor", { name: merchant.keyword })}
+      </Label>
+      <select
+        id={`${uid}-category`}
+        value={merchant.category_id}
+        disabled={busy}
+        onChange={(e) =>
+          void run(() => api.updateMerchant(merchant.id, { keyword: merchant.keyword, category_id: Number(e.target.value) }), "merchants.saved")
+        }
+        className={cn(SELECT_CLASS, "w-auto min-w-0 flex-1")}
+      >
+        {categories.map((c) => (
+          <option key={c.id} value={c.id}>
+            {locale === "de" ? c.name_de : c.name_en}
+          </option>
+        ))}
+      </select>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-destructive"
+        disabled={busy}
+        aria-label={t("merchants.remove", { name: merchant.keyword })}
+        onClick={() => void run(() => api.deleteMerchant(merchant.id), "merchants.removed")}
+      >
+        <Trash2 />
+      </Button>
+    </li>
+  );
+}
+
+function MerchantsTile() {
+  const { t, locale } = useI18n();
+  const merchants = useData(() => api.merchants(), "merchants");
+  const categoryList = useData(() => api.categories(), "categories");
+  const categories = spendingCategories(categoryList.data ?? []).sort((a, b) =>
+    (locale === "de" ? a.name_de : a.name_en).localeCompare(locale === "de" ? b.name_de : b.name_en, locale),
+  );
+  const [keyword, setKeyword] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const chosen = categoryId || String(categories.find((c) => c.key === "groceries")?.id ?? "");
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await api.createMerchant({ keyword, category_id: Number(chosen) });
+      setKeyword("");
+      toast.success(t("merchants.added"));
+      await merchants.reload();
+    } catch (error) {
+      toast.error(merchantError(error, t));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile index={9} title={t("merchants.title")} className="md:col-span-2" testId="merchants-tile">
+      <p className="mb-3 text-sm text-muted-foreground">{t("merchants.hint")}</p>
+      {!merchants.data || !categoryList.data ? (
+        <Skeleton className="h-16 rounded-xl" />
+      ) : (
+        <>
+          {merchants.data.length === 0 ? (
+            <p className="text-sm text-muted-foreground">{t("merchants.empty")}</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {merchants.data.map((m) => (
+                <MerchantRow key={`${m.id}:${m.category_id}`} merchant={m} categories={categories} onChanged={() => void merchants.reload()} />
+              ))}
+            </ul>
+          )}
+          <form onSubmit={add} className="mt-3 flex flex-wrap items-end gap-2">
+            <div className="min-w-32 flex-1 space-y-1">
+              <Label htmlFor="merchant-keyword" className="text-xs">
+                {t("merchants.keyword")}
+              </Label>
+              <Input id="merchant-keyword" value={keyword} maxLength={64} onChange={(e) => setKeyword(e.target.value)} required />
+            </div>
+            <div className="min-w-32 flex-1 space-y-1">
+              <Label htmlFor="merchant-category" className="text-xs">
+                {t("merchants.category")}
+              </Label>
+              <select id="merchant-category" value={chosen} onChange={(e) => setCategoryId(e.target.value)} className={SELECT_CLASS}>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {locale === "de" ? c.name_de : c.name_en}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <Button type="submit" disabled={busy || !keyword.trim() || !chosen}>
+              <Plus /> {t("merchants.add")}
+            </Button>
+          </form>
+        </>
+      )}
+    </Tile>
+  );
+}
+
 function OneOffTile() {
   const { t } = useI18n();
   const settings = useData(() => api.bankSettings(), "bank-settings");
@@ -840,6 +980,7 @@ export function Settings() {
         <TagsTile />
         <AccountsTile />
         <OneOffTile />
+        <MerchantsTile />
       </div>
     </div>
   );

@@ -152,6 +152,18 @@ class CategoryRule(Base):
     hits: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class MerchantRule(Base):
+    """A word in a bank counterparty ("rewe") that counts a payment in a
+    category when nothing else decided it: no receipt, no fixed cost, no
+    decision a person made for that counterparty."""
+
+    __tablename__ = "merchant_rules"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # normalized (text.normalize), matched as whole words
+    keyword: Mapped[str] = mapped_column(String(64), unique=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
+
+
 class Tag(Base):
     """For whom or what for (a family member, a holiday), next to the one
     category of an entry (the what). Sums per tag may overlap."""
@@ -365,6 +377,15 @@ DEFAULT_CATEGORIES = [
     ("other_income", "Sonstige Einnahmen", "Other income", "income", "#475569", "plus"),
 ]
 
+# grocery chains whose payments count as groceries (Jochen, 2026-10-27);
+# editable in the settings, seeded once
+DEFAULT_MERCHANTS = {
+    "groceries": [
+        "aldi", "lidl", "netto", "edeka", "penny", "rewe", "norma", "kaufland",
+        "marktkauf", "globus", "tegut", "famila", "nahkauf", "alnatura", "denns", "bio company",
+    ],
+}
+
 engine = create_engine(
     config.DATABASE_URL,
     connect_args={"check_same_thread": False} if config.DATABASE_URL.startswith("sqlite") else {},
@@ -398,7 +419,23 @@ def init_db() -> None:
                 session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
         _reopen_income(session)
         _learn_recurring(session)
+        session.flush()
+        _seed_merchants(session)
         session.commit()
+
+
+def _seed_merchants(session: Session) -> None:
+    """Once, so that a merchant a person removed stays removed."""
+    if session.get(AppState, "merchant_rules_v1") is not None:
+        return
+    for key, keywords in DEFAULT_MERCHANTS.items():
+        category_id = session.scalar(select(Category.id).where(Category.key == key))
+        if category_id is None:
+            continue
+        for keyword in keywords:
+            if session.scalar(select(MerchantRule.id).where(MerchantRule.keyword == keyword)) is None:
+                session.add(MerchantRule(keyword=keyword, category_id=category_id))
+    session.add(AppState(key="merchant_rules_v1", value=datetime.now(timezone.utc).isoformat()))
 
 
 def _learn_recurring(session: Session) -> None:

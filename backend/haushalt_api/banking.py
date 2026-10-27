@@ -12,6 +12,8 @@ Matching rules for money going out, in this order:
    RECURRING_TOLERANCE (the closest one if it pays several). Before or after
    that cost's period the booking counts by itself in the cost's category.
 3. counted: a category learned from earlier decisions for this counterparty.
+4. counted: the category of a listed merchant (MerchantRule, e.g. the
+   supermarkets as groceries) named in the counterparty.
 Money coming in is counted the same way through a learned category: an
 income category (salary) makes it income, a spending category makes it a
 refund that lowers that category's spending. Everything else waits for
@@ -36,7 +38,7 @@ from defusedxml import ElementTree
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import BankAccount, BankTransaction, Category, CategoryRule, Receipt, RecurringCost, RecurringRule, Tag, TagRule
+from .db import BankAccount, BankTransaction, Category, CategoryRule, MerchantRule, Receipt, RecurringCost, RecurringRule, Tag, TagRule
 from .stats import overlap_days, Period
 from .text import normalize, normalize_store
 
@@ -480,6 +482,27 @@ def match(session: Session, tx: BankTransaction, own: set[str] | None = None, ca
     if apply_recurring_rule(session, tx):
         return
     apply_rule(session, tx)
+    if tx.status == "review":
+        apply_merchant_rule(session, tx)
+
+
+def merchant_rule(session: Session, tx: BankTransaction) -> MerchantRule | None:
+    """The listed merchant named in the counterparty (whole words), or in
+    the purpose when the counterparty is empty; the longest keyword wins."""
+    text = f" {normalize(tx.counterparty or tx.purpose)} "
+    if text.isspace():
+        return None
+    found = [rule for rule in session.scalars(select(MerchantRule)) if f" {rule.keyword} " in text]
+    return max(found, key=lambda rule: len(rule.keyword), default=None)
+
+
+def apply_merchant_rule(session: Session, tx: BankTransaction) -> None:
+    """Counts a payment to a listed merchant (a supermarket) in its category."""
+    if tx.amount_cents >= 0:
+        return
+    rule = merchant_rule(session, tx)
+    if rule is not None:
+        tx.status, tx.category_id = "counted", rule.category_id
 
 
 def apply_recurring_rule(session: Session, tx: BankTransaction) -> bool:

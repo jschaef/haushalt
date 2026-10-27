@@ -134,6 +134,15 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   sums or `saved_cents`; `summary.one_off` reports their sums in and out
   (tile line "Einmalig"). The bank page suggests amounts from the
   threshold in `app_state` (`/bank/settings`, default 1,000 €, 0 = off).
+- Merchants (Jochen, 2026-10-27; `MerchantRule`, `/bank/merchants`,
+  settings tile): a keyword found as whole words in the normalized
+  counterparty (purpose if it is empty) counts a payment in its category,
+  last in the match order: receipt, fixed cost, learned counterparty rule
+  first. Seeded once with grocery chains (`db.DEFAULT_MERCHANTS`, marker
+  `merchant_rules_v1`, so removed ones stay removed). Changing the list
+  and confirming a receipt re-match the app's own decisions in the
+  background, so a supermarket booking counted before its receipt moves
+  to the receipt instead of counting twice.
 - Themes (`lib/themes.ts`, next-themes): `light`, `dark` and two low-vision
   modes in `app/globals.css`, `contrast` (black/white/yellow) and
   `contrast-light` (black on white, dark blue), both 118.75 % text, opaque,
