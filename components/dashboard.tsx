@@ -2,21 +2,74 @@
 
 import { useTheme } from "next-themes";
 import Link from "next/link";
-import { useCallback, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ArrowDownRight, ArrowUpRight, Camera, CheckCircle2, ChevronRight, Upload } from "lucide-react";
 import { AnimatedNumber } from "@/components/animated-number";
 import { BentoGrid, Tile } from "@/components/bento";
 import { Chart, type ChartOption } from "@/components/chart";
 import { useScan } from "@/components/scan";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Range, type Summary } from "@/lib/api";
+import { api, type CustomRange, type Range, type Summary } from "@/lib/api";
 import { money, percentChange, shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
-const RANGES: Range[] = ["7d", "30d", "90d", "365d", "ytd", "all"];
+const RANGES: Range[] = ["7d", "30d", "90d", "365d", "ytd", "all", "custom"];
+// the last chosen range, per browser (Jochen, 2026-10-27)
+const RANGE_KEY = "haushalt.dashboardRange";
+
+type Chosen = { range: Range; custom: CustomRange };
+
+function loadChosen(): Chosen | null {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(RANGE_KEY) ?? "null") as Chosen | null;
+    return saved && RANGES.includes(saved.range) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveChosen(chosen: Chosen) {
+  try {
+    window.localStorage.setItem(RANGE_KEY, JSON.stringify(chosen));
+  } catch {
+    // private window or blocked storage: the choice lasts until reload
+  }
+}
+
+function CustomRangeFields({ value, onChange }: { value: CustomRange; onChange: (c: CustomRange) => void }) {
+  const { t } = useI18n();
+  return (
+    <div className="glass flex flex-wrap items-end gap-3 rounded-xl p-3" data-testid="custom-range">
+      <div className="space-y-1">
+        <Label htmlFor="range-start" className="text-xs">
+          {t("range.start")}
+        </Label>
+        <Input id="range-start" type="date" value={value.start} onChange={(e) => onChange({ ...value, start: e.target.value })} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="range-end" className="text-xs">
+          {t("range.end")}
+        </Label>
+        <Input
+          id="range-end"
+          type="date"
+          value={value.end}
+          min={value.start || undefined}
+          aria-describedby="range-end-hint"
+          onChange={(e) => onChange({ ...value, end: e.target.value })}
+        />
+      </div>
+      <p id="range-end-hint" className="basis-full text-xs text-muted-foreground">
+        {t("range.endHint")}
+      </p>
+    </div>
+  );
+}
 
 function RangePicker({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
   const { t } = useI18n();
@@ -56,8 +109,21 @@ function Trend({ current, previous }: { current: number; previous: number }) {
 export function Dashboard() {
   const { t, locale } = useI18n();
   const { version, openCamera, openFiles } = useScan();
-  const [range, setRange] = useState<Range>("30d");
-  const summary = useData(() => api.summary(range), `${range}:${version}`);
+  const [chosen, setChosen] = useState<Chosen>({ range: "30d", custom: { start: "", end: "" } });
+  useEffect(() => {
+    const saved = loadChosen();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage exists only after hydration
+    if (saved) setChosen(saved);
+  }, []);
+  const choose = (next: Chosen) => {
+    setChosen(next);
+    saveChosen(next);
+  };
+  const { range, custom } = chosen;
+  // a custom range asks the API once its start is complete
+  const ready = range !== "custom" || /^\d{4}-\d{2}-\d{2}$/.test(custom.start);
+  const key = range === "custom" ? `custom:${custom.start}:${custom.end}` : range;
+  const summary = useData(() => (ready ? api.summary(range, custom) : Promise.resolve(null)), `${key}:${version}`);
   const drafts = useData(() => api.receipts("draft"), `drafts:${version}`);
   const recent = useData(() => api.receipts("confirmed"), `recent:${version}`);
   const bank = useData(() => api.transactions("review"), `bank:${version}`);
@@ -75,14 +141,15 @@ export function Dashboard() {
               {shortDate(s.start, locale)} – {shortDate(s.end, locale)} · {s.days} {t("dash.days")}
             </p>
           )}
-          {s?.since && (
+          {s?.since && range !== "custom" && (
             <p className="text-xs text-muted-foreground" data-testid="dash-since">
               {t("dash.since", { date: shortDate(s.since, locale) })}
             </p>
           )}
         </div>
-        <RangePicker value={range} onChange={setRange} />
+        <RangePicker value={range} onChange={(next) => choose({ ...chosen, range: next })} />
       </div>
+      {range === "custom" && <CustomRangeFields value={custom} onChange={(next) => choose({ range, custom: next })} />}
 
       {!s ? (
         <BentoGrid>
