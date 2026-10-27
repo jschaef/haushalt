@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type CustomRange, type Range, type Summary } from "@/lib/api";
-import { money, percentChange, shortDate } from "@/lib/format";
+import { localToday, money, percentChange, shortDate, validCustomRange } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
@@ -49,7 +49,13 @@ function CustomRangeFields({ value, onChange }: { value: CustomRange; onChange: 
         <Label htmlFor="range-start" className="text-xs">
           {t("range.start")}
         </Label>
-        <Input id="range-start" type="date" value={value.start} onChange={(e) => onChange({ ...value, start: e.target.value })} />
+        <Input
+          id="range-start"
+          type="date"
+          value={value.start}
+          max={localToday()}
+          onChange={(e) => onChange({ ...value, start: e.target.value })}
+        />
       </div>
       <div className="space-y-1">
         <Label htmlFor="range-end" className="text-xs">
@@ -60,6 +66,7 @@ function CustomRangeFields({ value, onChange }: { value: CustomRange; onChange: 
           type="date"
           value={value.end}
           min={value.start || undefined}
+          max={localToday()}
           aria-describedby="range-end-hint"
           onChange={(e) => onChange({ ...value, end: e.target.value })}
         />
@@ -121,7 +128,7 @@ export function Dashboard() {
   };
   const { range, custom } = chosen;
   // a custom range asks the API once its start is complete
-  const ready = range !== "custom" || /^\d{4}-\d{2}-\d{2}$/.test(custom.start);
+  const ready = range !== "custom" || validCustomRange(custom.start, custom.end);
   const key = range === "custom" ? `custom:${custom.start}:${custom.end}` : range;
   const summary = useData(() => (ready ? api.summary(range, custom) : Promise.resolve(null)), `${key}:${version}`);
   const drafts = useData(() => api.receipts("draft"), `drafts:${version}`);
@@ -151,7 +158,11 @@ export function Dashboard() {
       </div>
       {range === "custom" && <CustomRangeFields value={custom} onChange={(next) => choose({ range, custom: next })} />}
 
-      {!s ? (
+      {!ready ? (
+        <p className="glass rounded-2xl p-6 text-center text-muted-foreground" data-testid="range-incomplete">
+          {t("range.incomplete")}
+        </p>
+      ) : !s ? (
         <BentoGrid>
           {[...Array(6)].map((_, i) => (
             <Skeleton key={i} className={cn("rounded-3xl", i === 0 ? "col-span-2 row-span-2 h-72" : "h-32")} />

@@ -28,3 +28,15 @@ test("a custom period with start and optional end is remembered", async ({ page 
   await page.getByRole("tab", { name: "30 Tage" }).click();
   await expect(page.getByTestId("custom-range")).toHaveCount(0);
 });
+
+test("an impossible period asks for a valid one instead of loading forever", async ({ page }) => {
+  await login(page);
+  await page.goto("/dashboard");
+  await page.getByRole("tab", { name: "Eigener Zeitraum" }).click();
+  const fields = page.getByTestId("custom-range");
+  await fields.getByLabel("Von").fill(iso(3));
+  await fields.getByLabel("Bis (optional)").fill(iso(6));
+  await expect(page.getByTestId("range-incomplete")).toBeVisible();
+  await fields.getByLabel("Bis (optional)").fill("");
+  await expect(page.getByText("· 4 Tage")).toBeVisible();
+});
