@@ -40,11 +40,11 @@ def test_overlap_days():
     assert overlap_days(date(2026, 11, 1), None, period) == 0
 
 
-def test_resolve_period():
+def test_resolve_period(session):
     today = date(2026, 10, 22)
-    assert resolve_period(None, "7d", today) == Period(date(2026, 10, 16), today)
-    assert resolve_period(None, "ytd", today) == Period(date(2026, 1, 1), today)
-    assert resolve_period(None, "bogus", today).days == 30
+    assert resolve_period(session, "7d", today) == Period(date(2026, 10, 16), today)
+    assert resolve_period(session, "ytd", today) == Period(date(2026, 1, 1), today)
+    assert resolve_period(session, "bogus", today).days == 30
 
 
 def test_averages_variable_only(session):

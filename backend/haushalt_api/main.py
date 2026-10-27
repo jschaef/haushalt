@@ -25,7 +25,7 @@ from .auth import (
     verify_password,
 )
 from .passwords import MAX_LENGTH, one_time_password, problems
-from .db import BankTransaction, Category, Meter, Receipt, RecurringCost, SessionLocal, Store, User, get_session, init_db
+from .db import AppState, BankTransaction, Category, Meter, Receipt, RecurringCost, SessionLocal, Store, User, get_session, init_db
 from .extraction import get_extractor, sniff
 from .ratelimit import login_limiter
 from .tags_api import resolve_tags
@@ -690,3 +690,25 @@ def stats_summary(
     session: Session = Depends(get_session),
 ):
     return stats.summary(session, stats.resolve_period(session, range))
+
+
+class ResetDate(BaseModel):
+    # None lifts the reset: the dashboard counts everything again
+    since: date | None = None
+
+
+@app.get(f"{PREFIX}/stats/since", response_model=ResetDate)
+def get_reset_date(_user: User = Depends(current_user), session: Session = Depends(get_session)):
+    return ResetDate(since=stats.reset_date(session))
+
+
+@app.put(f"{PREFIX}/stats/since", response_model=ResetDate)
+def put_reset_date(body: ResetDate, _admin: User = Depends(admin_user), session: Session = Depends(get_session)):
+    """Household-wide, so only admins move it."""
+    if body.since is not None and body.since > date.today():
+        raise HTTPException(status_code=422, detail="reset_in_future")
+    state = session.get(AppState, stats.SINCE_KEY) or AppState(key=stats.SINCE_KEY)
+    state.value = body.since.isoformat() if body.since else ""
+    session.add(state)
+    session.commit()
+    return body

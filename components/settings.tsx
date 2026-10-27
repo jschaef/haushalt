@@ -23,6 +23,7 @@ import {
   type User,
 } from "@/lib/api";
 import { KEY_RE, effectiveKey, toCategoryKey } from "@/lib/category-key";
+import { shortDate } from "@/lib/format";
 import { useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
 import type { Locale, MessageKey } from "@/lib/i18n/messages";
@@ -910,6 +911,71 @@ function MerchantsTile() {
   );
 }
 
+// today as YYYY-MM-DD in local time (toISOString would use UTC)
+function localToday(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function ResetTile() {
+  const { t, locale } = useI18n();
+  const me = useData(() => api.me(), "me");
+  const current = useData(() => api.resetDate(), "reset-date");
+  const [day, setDay] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const since = current.data?.since ?? null;
+  const value = day ?? since ?? localToday();
+
+  async function save(next: string | null) {
+    setBusy(true);
+    try {
+      current.setData(await api.saveResetDate(next));
+      setDay(null);
+      toast.success(next ? t("reset.saved") : t("reset.lifted"));
+    } catch (error) {
+      const message = (error as Error).message;
+      toast.error(message === "reset_in_future" ? t("reset.future") : message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile index={10} title={t("reset.title")} testId="reset-tile">
+      {!current.data || !me.data ? (
+        <Skeleton className="h-28 rounded-xl" />
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm" data-testid="reset-state">
+            {since ? t("reset.active", { date: shortDate(since, locale) }) : t("reset.none")}
+          </p>
+          <p className="text-xs text-muted-foreground">{t("reset.hint")}</p>
+          {me.data.is_admin ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="reset-date">{t("reset.date")}</Label>
+                <Input id="reset-date" type="date" max={localToday()} value={value} onChange={(e) => setDay(e.target.value)} />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button disabled={busy || !value} onClick={() => void save(value)}>
+                  {t("reset.apply")}
+                </Button>
+                {since && (
+                  <Button variant="outline" disabled={busy} onClick={() => void save(null)}>
+                    {t("reset.lift")}
+                  </Button>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("reset.adminOnly")}</p>
+          )}
+        </div>
+      )}
+    </Tile>
+  );
+}
+
 function OneOffTile() {
   const { t } = useI18n();
   const settings = useData(() => api.bankSettings(), "bank-settings");
@@ -980,6 +1046,7 @@ export function Settings() {
         <TagsTile />
         <AccountsTile />
         <OneOffTile />
+        <ResetTile />
         <MerchantsTile />
       </div>
     </div>
