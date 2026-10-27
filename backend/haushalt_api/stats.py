@@ -30,7 +30,7 @@ from datetime import date, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from .db import AppState, BankAccount, BankTransaction, Category, Receipt, RecurringCost, Tag
+from .db import BankAccount, BankTransaction, Category, Receipt, RecurringCost, Tag, get_setting
 
 DAYS_PER_MONTH = 365.25 / 12
 OTHER = "other"
@@ -68,8 +68,8 @@ SINCE_KEY = "dashboard_since"
 
 
 def reset_date(session: Session) -> date | None:
-    state = session.get(AppState, SINCE_KEY)
-    return date.fromisoformat(state.value) if state and state.value else None
+    value = get_setting(session, SINCE_KEY)
+    return date.fromisoformat(value) if value else None
 
 
 def resolve_period(session: Session, range_key: str, today: date | None = None) -> Period:

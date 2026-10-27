@@ -18,7 +18,8 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from . import config
-from .db import RevokedToken, User, get_session
+from . import tenancy
+from .db import Household, RevokedToken, User, get_session
 from .passwords import normalize
 
 _bearer = HTTPBearer(auto_error=False)
@@ -131,12 +132,17 @@ def session_user(
 ) -> User:
     """The logged-in account, also while it still has to replace a one-time
     password - only for the routes that do exactly that."""
-    user = session.get(User, claims.user_id)
+    user = session.get(User, claims.user_id, execution_options=tenancy.EVERYWHERE)
     if user is None:
         raise HTTPException(status_code=401, detail="Unknown user")
     # a password change, reset or disabling raised the version: old sessions end
     if user.disabled or claims.version != user.token_version:
         raise HTTPException(status_code=401, detail="Session ended")
+    household = session.get(Household, user.household_id) if user.household_id else None
+    if household is not None and household.disabled:
+        raise HTTPException(status_code=401, detail="household_disabled")
+    # from here on the request sees only this household
+    tenancy.bind(session, user.household_id)
     return user
 
 

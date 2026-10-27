@@ -94,6 +94,52 @@ function ThemeTile() {
   );
 }
 
+function HouseholdTile() {
+  const { t } = useI18n();
+  const me = useData(() => api.me(), "me");
+  const household = useData(() => api.household(), "household");
+  const [name, setName] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const value = name ?? household.data?.name ?? "";
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      household.setData(await api.renameHousehold(value));
+      setName(null);
+      toast.success(t("receipt.saved"));
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Tile index={11} title={t("household.title")} testId="household-tile">
+      {!household.data || !me.data ? (
+        <Skeleton className="h-20 rounded-xl" />
+      ) : me.data.is_admin ? (
+        <form onSubmit={submit} className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="household-name">{t("household.name")}</Label>
+            <Input id="household-name" value={value} maxLength={64} onChange={(e) => setName(e.target.value)} required />
+          </div>
+          <Button type="submit" disabled={busy || !value.trim()}>
+            {t("common.save")}
+          </Button>
+        </form>
+      ) : (
+        <p className="text-sm" data-testid="household-name">
+          {household.data.name}
+        </p>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground">{t("household.hint")}</p>
+    </Tile>
+  );
+}
+
 function ProfileTile() {
   const { t } = useI18n();
   const me = useData(() => api.me(), "me");
@@ -1040,6 +1086,7 @@ export function Settings() {
         <LanguageTile />
         <ThemeTile />
         <ProfileTile />
+        <HouseholdTile />
         <PasswordTile />
         <MembersTile />
         <CategoriesTile />

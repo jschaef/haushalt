@@ -31,7 +31,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from . import config
+from . import config, tenancy
 from .db import Meter, MeterReading, SessionLocal
 
 logger = logging.getLogger("haushalt_api")
@@ -67,7 +67,8 @@ def hash_token(token: str) -> str:
 def meter_for_token(session: Session, token: str) -> Meter | None:
     if not token.startswith(TOKEN_PREFIX):
         return None
-    return session.scalar(select(Meter).where(Meter.ingest_token_hash == hash_token(token)))
+    # the device knows no household: look in all of them
+    return session.scalar(tenancy.everywhere(select(Meter).where(Meter.ingest_token_hash == hash_token(token))))
 
 
 # --- recording -------------------------------------------------------------------
@@ -195,10 +196,13 @@ def poll_all() -> int:
     """Polls every meter with a source; returns how many succeeded."""
     done = 0
     with SessionLocal() as session:
-        meters = session.scalars(
-            select(Meter).where(Meter.source_url != "").options(selectinload(Meter.readings))
+        sources = session.execute(
+            tenancy.everywhere(select(Meter.id, Meter.household_id).where(Meter.source_url != ""))
         ).all()
-        for meter in meters:
+        for meter_id, household_id in sources:
+            # each meter in its household's view (its readings, new readings)
+            tenancy.bind(session, household_id)
+            meter = session.scalar(select(Meter).where(Meter.id == meter_id).options(selectinload(Meter.readings)))
             try:
                 poll_meter(session, meter)
                 done += 1

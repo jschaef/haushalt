@@ -199,6 +199,9 @@ export type BankTransaction = {
 export type Merchant = { id: number; keyword: string; category_id: number };
 export type MerchantInput = { keyword: string; category_id: number };
 
+// the household (tenant) of the logged-in member
+export type Household = { id: number; name: string };
+
 export type BankSettings = {
   // bookings from this amount on are suggested as one-offs; 0: none
   one_off_threshold_cents: number;
@@ -305,6 +308,9 @@ function json(method: string, body: unknown): RequestInit {
 
 export const api = {
   me: () => request<User>("me"),
+  household: () => request<Household>("household"),
+  // admins only
+  renameHousehold: (name: string) => request<Household>("household", json("PUT", { name })),
   updateMe: (patch: Partial<Pick<User, "display_name" | "locale">>) => request<User>("me", json("PATCH", patch)),
   users: () => request<User[]>("users"),
   addUser: (body: { username: string; display_name?: string; is_admin?: boolean }) =>

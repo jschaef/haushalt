@@ -1,7 +1,9 @@
 """Database models (SQLAlchemy 2). Money is stored as integer cents.
 
-All members of the household see the same data; receipts remember who
-uploaded them. SQLite by default, any SQLAlchemy URL works (PostgreSQL).
+Several households share one installation; every row of their data carries
+its household_id (HouseholdOwned) and tenancy.py keeps each session to one
+household. All members of a household see the same data; receipts remember
+who uploaded them. SQLite by default, any SQLAlchemy URL works (PostgreSQL).
 """
 
 from datetime import date, datetime, timezone
@@ -29,6 +31,7 @@ from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
     Session,
+    declared_attr,
     mapped_column,
     relationship,
     sessionmaker,
@@ -46,10 +49,33 @@ class Base(DeclarativeBase):
     pass
 
 
+class Household(Base):
+    """One household (tenant): its members and all of its data."""
+
+    __tablename__ = "households"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(64))
+    disabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class HouseholdOwned:
+    """Data of one household. tenancy.py adds the session's household to
+    every query of such a row and to every new one."""
+
+    @declared_attr
+    def household_id(cls) -> Mapped[int]:
+        return mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
+    # usernames are unique across households: logging in names no household
     username: Mapped[str] = mapped_column(String(64), unique=True)
+    # empty for the operator, who belongs to no household
+    household_id: Mapped[int | None] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"), index=True)
+    is_operator: Mapped[bool] = mapped_column(Boolean, default=False)
     display_name: Mapped[str] = mapped_column(String(128), default="")
     password_hash: Mapped[str] = mapped_column(String(256))
     locale: Mapped[str] = mapped_column(String(8), default="de")
@@ -64,10 +90,20 @@ class User(Base):
 
 
 class AppState(Base):
-    """One-time data migrations that have run and household settings (key -> value)."""
+    """One-time data migrations that have run (key -> value)."""
 
     __tablename__ = "app_state"
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(String(256), default="")
+
+
+class HouseholdSetting(HouseholdOwned, Base):
+    """A household's settings (key -> value), e.g. the one-off threshold."""
+
+    __tablename__ = "household_settings"
+    __table_args__ = (UniqueConstraint("household_id", "key", name="uq_household_settings_key"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(64))
     value: Mapped[str] = mapped_column(String(256), default="")
 
 
@@ -77,14 +113,15 @@ class RevokedToken(Base):
     expires_at: Mapped[int] = mapped_column(Integer)
 
 
-class Category(Base):
+class Category(HouseholdOwned, Base):
     """kind: "variable" (shopping, lifestyle), "fixed" (utilities, rent) or
     "income" (salary, child benefit) - only incoming bank bookings use the
     latter; an incoming booking in a spending category is a refund."""
 
     __tablename__ = "categories"
+    __table_args__ = (UniqueConstraint("household_id", "key", name="uq_categories_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    key: Mapped[str] = mapped_column(String(48), unique=True)
+    key: Mapped[str] = mapped_column(String(48))
     name_de: Mapped[str] = mapped_column(String(64))
     name_en: Mapped[str] = mapped_column(String(64))
     kind: Mapped[str] = mapped_column(String(16), default="variable")
@@ -92,15 +129,16 @@ class Category(Base):
     icon: Mapped[str] = mapped_column(String(32), default="tag")
 
 
-class Store(Base):
+class Store(HouseholdOwned, Base):
     __tablename__ = "stores"
+    __table_args__ = (UniqueConstraint("household_id", "normalized", name="uq_stores_normalized"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    normalized: Mapped[str] = mapped_column(String(128), unique=True)
+    normalized: Mapped[str] = mapped_column(String(128))
     default_category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
 
 
-class Receipt(Base):
+class Receipt(HouseholdOwned, Base):
     """status: "draft" after reading, "confirmed" once a person checked it.
     Only confirmed receipts count in the statistics."""
 
@@ -129,7 +167,7 @@ class Receipt(Base):
     )
 
 
-class ReceiptItem(Base):
+class ReceiptItem(HouseholdOwned, Base):
     __tablename__ = "receipt_items"
     id: Mapped[int] = mapped_column(primary_key=True)
     receipt_id: Mapped[int] = mapped_column(ForeignKey("receipts.id", ondelete="CASCADE"))
@@ -143,35 +181,38 @@ class ReceiptItem(Base):
     receipt: Mapped[Receipt] = relationship(back_populates="items")
 
 
-class CategoryRule(Base):
+class CategoryRule(HouseholdOwned, Base):
     """Learned mapping from a normalized item text to a category."""
 
     __tablename__ = "category_rules"
+    __table_args__ = (UniqueConstraint("household_id", "pattern", name="uq_category_rules_pattern"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    pattern: Mapped[str] = mapped_column(String(256), unique=True)
+    pattern: Mapped[str] = mapped_column(String(256))
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
     hits: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class MerchantRule(Base):
+class MerchantRule(HouseholdOwned, Base):
     """A word in a bank counterparty ("rewe") that counts a payment in a
     category when nothing else decided it: no receipt, no fixed cost, no
     decision a person made for that counterparty."""
 
     __tablename__ = "merchant_rules"
+    __table_args__ = (UniqueConstraint("household_id", "keyword", name="uq_merchant_rules_keyword"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     # normalized (text.normalize), matched as whole words
-    keyword: Mapped[str] = mapped_column(String(64), unique=True)
+    keyword: Mapped[str] = mapped_column(String(64))
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"))
 
 
-class Tag(Base):
+class Tag(HouseholdOwned, Base):
     """For whom or what for (a family member, a holiday), next to the one
     category of an entry (the what). Sums per tag may overlap."""
 
     __tablename__ = "tags"
+    __table_args__ = (UniqueConstraint("household_id", "name", name="uq_tags_name"),)
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(64))
     color: Mapped[str] = mapped_column(String(7), default="#64748b")
 
 
@@ -190,7 +231,7 @@ bank_transaction_tags = Table(
 )
 
 
-class TagRule(Base):
+class TagRule(HouseholdOwned, Base):
     """Learned tags of a bank counterparty (pattern as in CategoryRule)."""
 
     __tablename__ = "tag_rules"
@@ -198,7 +239,7 @@ class TagRule(Base):
     tag_id: Mapped[int] = mapped_column(ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True)
 
 
-class RecurringRule(Base):
+class RecurringRule(HouseholdOwned, Base):
     """A bank counterparty learned to pay a recurring cost (pattern as in
     CategoryRule); one counterparty can pay several (gas and electricity)."""
 
@@ -207,7 +248,7 @@ class RecurringRule(Base):
     recurring_id: Mapped[int] = mapped_column(ForeignKey("recurring_costs.id", ondelete="CASCADE"), primary_key=True)
 
 
-class RecurringCost(Base):
+class RecurringCost(HouseholdOwned, Base):
     """A cost due every interval_months (1 = monthly instalment, 12 = yearly),
     spread evenly over its period in the statistics."""
 
@@ -224,7 +265,7 @@ class RecurringCost(Base):
     tags: Mapped[list[Tag]] = relationship(secondary=recurring_cost_tags, lazy="selectin", order_by=Tag.name)
 
 
-class Meter(Base):
+class Meter(HouseholdOwned, Base):
     """A utility meter. kind: electricity, gas, water, heat or other."""
 
     __tablename__ = "meters"
@@ -248,7 +289,7 @@ class Meter(Base):
     tariffs: Mapped[list["Tariff"]] = relationship(cascade="all, delete-orphan", order_by="Tariff.valid_from")
 
 
-class MeterReading(Base):
+class MeterReading(HouseholdOwned, Base):
     __tablename__ = "meter_readings"
     __table_args__ = (UniqueConstraint("meter_id", "read_on"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -260,7 +301,7 @@ class MeterReading(Base):
     meter: Mapped[Meter] = relationship(back_populates="readings")
 
 
-class Tariff(Base):
+class Tariff(HouseholdOwned, Base):
     """Prices valid from a date on: gross cent per unit and gross base fee per month."""
 
     __tablename__ = "tariffs"
@@ -271,7 +312,7 @@ class Tariff(Base):
     base_fee_monthly_cents: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class BankAccount(Base):
+class BankAccount(HouseholdOwned, Base):
     """One of the household's own accounts. Bookings of a statement belong to
     it; transfers to or from another own account count nowhere."""
 
@@ -290,7 +331,7 @@ class BankAccount(Base):
     color: Mapped[str] = mapped_column(String(7), default="#64748b")
 
 
-class BankTransaction(Base):
+class BankTransaction(HouseholdOwned, Base):
     """One booking from a bank statement. amount_cents < 0 is money going out.
 
     status decides whether and how it counts, so nothing is counted twice:
@@ -302,6 +343,8 @@ class BankTransaction(Base):
     """
 
     __tablename__ = "bank_transactions"
+    # two households may import the same statement (a shared account)
+    __table_args__ = (UniqueConstraint("household_id", "fingerprint", name="uq_bank_transactions_fingerprint"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     booked_on: Mapped[date] = mapped_column(Date, index=True)
     amount_cents: Mapped[int] = mapped_column(Integer)
@@ -309,7 +352,7 @@ class BankTransaction(Base):
     counterparty: Mapped[str] = mapped_column(String(256), default="")
     iban: Mapped[str] = mapped_column(String(34), default="")
     purpose: Mapped[str] = mapped_column(String(512), default="")
-    fingerprint: Mapped[str] = mapped_column(String(64), unique=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(16), default="review", index=True)
     account_id: Mapped[int | None] = mapped_column(ForeignKey("bank_accounts.id", ondelete="SET NULL"))
     receipt_id: Mapped[int | None] = mapped_column(ForeignKey("receipts.id", ondelete="SET NULL"))
@@ -329,7 +372,7 @@ class BankTransaction(Base):
     tags: Mapped[list[Tag]] = relationship(secondary=bank_transaction_tags, lazy="selectin", order_by=Tag.name)
 
 
-class UtilityBill(Base):
+class UtilityBill(HouseholdOwned, Base):
     """An annual utility bill as read from its PDF or photo; amounts in cents."""
 
     __tablename__ = "utility_bills"
@@ -404,14 +447,11 @@ def _sqlite_pragmas(dbapi_connection, _record):
 
 
 MIGRATIONS = Path(__file__).parent / "migrations"
-# the schema the migrations started from (databases from before Alembic)
-BASELINE = "0001"
 
 
 def migrate() -> None:
-    """Brings the schema to the newest migration. A database from before
-    Alembic first gets what the baseline added (create_all for new tables,
-    _LATER_COLUMNS for new columns) and is stamped as the baseline."""
+    """Brings the schema to the newest migration. The baseline also
+    completes a database from before Alembic (tables and columns it lacks)."""
     from alembic import command
     from alembic.config import Config
 
@@ -419,12 +459,11 @@ def migrate() -> None:
         alembic = Config()
         alembic.set_main_option("script_location", str(MIGRATIONS))
         alembic.attributes["connection"] = connection
-        tables = set(inspect(connection).get_table_names())
-        if "alembic_version" not in tables and "users" in tables:
-            Base.metadata.create_all(connection)
-            _add_missing_columns(connection)
-            command.stamp(alembic, BASELINE)
         command.upgrade(alembic, "head")
+
+
+# one-time data migrations, run in every household (markers in app_state)
+_ONCE = ("income_v1", "recurring_rules_v1", "merchant_rules_v1")
 
 
 def init_db() -> None:
@@ -432,25 +471,36 @@ def init_db() -> None:
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     migrate()
     with SessionLocal() as session:
-        # databases from before the admin role: the first account becomes admin
-        if session.scalar(select(User.id).where(User.is_admin)) is None:
-            first = session.scalar(select(User).order_by(User.id).limit(1))
-            if first is not None:
-                first.is_admin = True
-        existing = set(session.scalars(select(Category.key)))
-        for key, de, en, kind, color, icon in DEFAULT_CATEGORIES:
-            if key not in existing:
-                session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
-        _reopen_income(session)
-        _learn_recurring(session)
-        session.flush()
-        _seed_merchants(session)
+        pending = [key for key in _ONCE if session.get(AppState, key) is None]
+        for household in session.scalars(select(Household)).all():
+            tenancy.bind(session, household.id)
+            # households from before the admin role: the first account becomes admin
+            if session.scalar(select(User.id).where(User.is_admin)) is None:
+                first = session.scalar(select(User).order_by(User.id).limit(1))
+                if first is not None:
+                    first.is_admin = True
+            seed_household(session, merchants="merchant_rules_v1" in pending)
+            if "income_v1" in pending:
+                _reopen_income(session)
+            if "recurring_rules_v1" in pending:
+                _learn_recurring(session)
+            session.flush()
+        tenancy.bind(session, None)
+        now = datetime.now(timezone.utc).isoformat()
+        session.add_all(AppState(key=key, value=now) for key in pending)
         session.commit()
 
 
-def _seed_merchants(session: Session) -> None:
-    """Once, so that a merchant a person removed stays removed."""
-    if session.get(AppState, "merchant_rules_v1") is not None:
+def seed_household(session: Session, merchants: bool = True) -> None:
+    """The default categories a household lacks (a removed one comes back)
+    and, for a new household, the default merchant list. Works on the
+    household bound to the session."""
+    existing = set(session.scalars(select(Category.key)))
+    for key, de, en, kind, color, icon in DEFAULT_CATEGORIES:
+        if key not in existing:
+            session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
+    session.flush()
+    if not merchants:
         return
     for key, keywords in DEFAULT_MERCHANTS.items():
         category_id = session.scalar(select(Category.id).where(Category.key == key))
@@ -459,29 +509,47 @@ def _seed_merchants(session: Session) -> None:
         for keyword in keywords:
             if session.scalar(select(MerchantRule.id).where(MerchantRule.keyword == keyword)) is None:
                 session.add(MerchantRule(keyword=keyword, category_id=category_id))
-    session.add(AppState(key="merchant_rules_v1", value=datetime.now(timezone.utc).isoformat()))
+
+
+def get_setting(session: Session, key: str) -> str | None:
+    """A setting of the household bound to the session."""
+    return session.scalar(select(HouseholdSetting.value).where(HouseholdSetting.key == key))
+
+
+def set_setting(session: Session, key: str, value: str) -> None:
+    setting = session.scalar(select(HouseholdSetting).where(HouseholdSetting.key == key))
+    if setting is None:
+        session.add(HouseholdSetting(key=key, value=value))
+    else:
+        setting.value = value
+
+
+def create_household(session: Session, name: str) -> Household:
+    """A new household with its default categories and merchants; the
+    session is bound to it afterwards."""
+    household = Household(name=name)
+    session.add(household)
+    session.flush()
+    tenancy.bind(session, household.id)
+    seed_household(session)
+    return household
 
 
 def _learn_recurring(session: Session) -> None:
-    """Once: bookings a person linked to a recurring cost before this was
-    learned teach their counterparty (as banking.learn_recurring does)."""
-    if session.get(AppState, "recurring_rules_v1") is not None:
-        return
+    """Bookings a person linked to a recurring cost before this was learned
+    teach their counterparty (as banking.learn_recurring does)."""
     seen = set()
     for tx in session.scalars(select(BankTransaction).where(BankTransaction.status == "fixed", BankTransaction.recurring_id.is_not(None))):
         key = (("bank:" + normalize(tx.counterparty))[:256], tx.recurring_id)
         if tx.counterparty and key not in seen:
             seen.add(key)
             session.add(RecurringRule(pattern=key[0], recurring_id=key[1]))
-    session.add(AppState(key="recurring_rules_v1", value=datetime.now(timezone.utc).isoformat()))
 
 
 def _reopen_income(session: Session) -> None:
-    """Once: incoming bookings used to be ignored automatically; since income
+    """Incoming bookings used to be ignored automatically; since income
     counts (2026-10), those that are no transfer or card debit wait for a
     decision (income category or refund) like any new one."""
-    if session.get(AppState, "income_v1") is not None:
-        return
     own = {iban for iban in session.scalars(select(BankAccount.iban)) if iban}
     for tx in session.scalars(
         select(BankTransaction).where(
@@ -492,53 +560,10 @@ def _reopen_income(session: Session) -> None:
     ):
         if "".join(tx.iban.split()).upper() not in own:
             tx.status = "review"
-    session.add(AppState(key="income_v1", value=datetime.now(timezone.utc).isoformat()))
-
-
-# Columns added after the first release, before Alembic: databases from that
-# time get them before they are stamped as the baseline (migrate). Frozen -
-# schema changes now are Alembic migrations (haushalt_api/migrations).
-_LATER_COLUMNS = {
-    "users": {
-        "is_admin": "BOOLEAN NOT NULL DEFAULT FALSE",
-        "disabled": "BOOLEAN NOT NULL DEFAULT FALSE",
-        "must_change_password": "BOOLEAN NOT NULL DEFAULT FALSE",
-        "token_version": "INTEGER NOT NULL DEFAULT 0",
-    },
-    "receipts": {"file_deleted_at": "TIMESTAMP WITH TIME ZONE"},
-    "bank_accounts": {"card_number": "VARCHAR(19) NOT NULL DEFAULT ''", "kind": "VARCHAR(16) NOT NULL DEFAULT 'giro'"},
-    "bank_transactions": {
-        "account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
-        "statement_on": "DATE",
-        "settles_account_id": "INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL",
-        # bookings decided before this was recorded count as a person's decision
-        "decided_by": "VARCHAR(8) NOT NULL DEFAULT 'person'",
-        "one_off": "BOOLEAN NOT NULL DEFAULT FALSE",
-    },
-    "recurring_costs": {"meter_id": "INTEGER REFERENCES meters(id) ON DELETE SET NULL"},
-    "meters": {
-        "ingest_token_hash": "VARCHAR(64) NOT NULL DEFAULT ''",
-        "source_url": "VARCHAR(512) NOT NULL DEFAULT ''",
-        "source_path": "VARCHAR(128) NOT NULL DEFAULT ''",
-        "last_ingest_at": "TIMESTAMP WITH TIME ZONE",  # valid in SQLite and PostgreSQL
-        "last_ingest_error": "VARCHAR(256) NOT NULL DEFAULT ''",
-    },
-}
-
-
-def _add_missing_columns(connection=None) -> None:
-    if connection is None:
-        with engine.begin() as own:
-            _add_missing_columns(own)
-        return
-    inspector = inspect(connection)
-    for table, columns in _LATER_COLUMNS.items():
-        existing = {c["name"] for c in inspector.get_columns(table)}
-        for name, ddl in columns.items():
-            if name not in existing:
-                connection.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def get_session() -> Iterator[Session]:
     with SessionLocal() as session:
         yield session
+
+from . import tenancy  # noqa: E402,F401  (registers the household filter)

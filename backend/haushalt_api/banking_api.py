@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from . import banking, config
 from .auth import current_user
-from .db import AppState, BankAccount, BankTransaction, Category, MerchantRule, Receipt, RecurringCost, get_session
+from . import tenancy
+from .db import BankAccount, BankTransaction, Category, MerchantRule, Receipt, RecurringCost, get_session, get_setting, set_setting
 from .tags_api import resolve_tags
 from .text import normalize
 
@@ -252,15 +253,13 @@ class BankSettings(BaseModel):
 
 @router.get("/settings", response_model=BankSettings)
 def get_settings(session: Session = Depends(get_session)):
-    state = session.get(AppState, ONE_OFF_KEY)
-    return BankSettings(one_off_threshold_cents=int(state.value) if state else DEFAULT_ONE_OFF_THRESHOLD)
+    value = get_setting(session, ONE_OFF_KEY)
+    return BankSettings(one_off_threshold_cents=int(value) if value else DEFAULT_ONE_OFF_THRESHOLD)
 
 
 @router.put("/settings", response_model=BankSettings)
 def put_settings(body: BankSettings, session: Session = Depends(get_session)):
-    state = session.get(AppState, ONE_OFF_KEY) or AppState(key=ONE_OFF_KEY)
-    state.value = str(body.one_off_threshold_cents)
-    session.add(state)
+    set_setting(session, ONE_OFF_KEY, str(body.one_off_threshold_cents))
     session.commit()
     return body
 
@@ -313,7 +312,7 @@ def create_merchant(body: MerchantIn, background: BackgroundTasks, session: Sess
     merchant = MerchantRule(**_clean_merchant(session, body))
     session.add(merchant)
     session.commit()
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
     return _merchant_out(merchant)
 
 
@@ -323,7 +322,7 @@ def update_merchant(merchant_id: int, body: MerchantIn, background: BackgroundTa
     for field, value in _clean_merchant(session, body, merchant.id).items():
         setattr(merchant, field, value)
     session.commit()
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
     return _merchant_out(merchant)
 
 
@@ -331,7 +330,7 @@ def update_merchant(merchant_id: int, body: MerchantIn, background: BackgroundTa
 def delete_merchant(merchant_id: int, background: BackgroundTasks, session: Session = Depends(get_session)):
     session.delete(_merchant(session, merchant_id))
     session.commit()
-    background.add_task(banking.rematch_later)
+    background.add_task(banking.rematch_later, tenancy.current(session))
 
 
 @router.post("/rematch")

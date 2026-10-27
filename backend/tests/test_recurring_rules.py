@@ -88,13 +88,12 @@ def test_new_instalment_keeps_the_learned_payer(client, auth, meter):  # noqa: F
     assert booking(client, auth, "Abschlag 2")["recurring_id"] == new["id"]
 
 
-def test_links_made_before_are_learned_once():
-    with SessionLocal() as session:
-        session.delete(session.get(AppState, "recurring_rules_v1"))
-        session.commit()
+def test_links_made_before_are_learned_once(session):
+    session.delete(session.get(AppState, "recurring_rules_v1"))
+    session.commit()
     from haushalt_api.db import RecurringCost
 
-    with SessionLocal() as session:
+    if True:
         recurring = RecurringCost(name="Internet", amount_cents=4200, interval_months=1, start_on=d(100))
         session.add(recurring)
         session.flush()
@@ -104,6 +103,5 @@ def test_links_made_before_are_learned_once():
             BankTransaction(fingerprint="b", counterparty="Scheune Internet", status="fixed", recurring_id=recurring.id, **common),
         ])
         session.commit()
-        db_module._learn_recurring(session)
-        session.commit()
+        db_module.init_db()
         assert [(r.pattern, r.recurring_id) for r in session.query(RecurringRule)] == [("bank:scheune internet", recurring.id)]

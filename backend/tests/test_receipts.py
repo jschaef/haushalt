@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from conftest import unscoped
 from haushalt_api.extraction import ExtractionError, FakeExtractor
 from haushalt_api import main
 
@@ -126,7 +127,7 @@ def test_files_are_deleted_after_the_retention_period(client, auth, png, monkeyp
         if confirm:
             client.post(f"/api/v1/receipts/{r['id']}/confirm", headers=auth)
         ids[name] = r["id"]
-    with SessionLocal() as session:
+    with unscoped() as session:
         assert receipts_module.expire_files(session) == 1
         assert receipts_module.expire_files(session) == 0  # idempotent
     old = client.get(f"/api/v1/receipts/{ids['old']}", headers=auth).json()
@@ -138,5 +139,5 @@ def test_files_are_deleted_after_the_retention_period(client, auth, png, monkeyp
     assert client.get(f"/api/v1/receipts/{ids['old draft']}/file", headers=auth).status_code == 200
     # 0 keeps files forever
     monkeypatch.setattr(config, "RECEIPT_PHOTO_DAYS", 0)
-    with SessionLocal() as session:
+    with unscoped() as session:
         assert receipts_module.expire_files(session) == 0

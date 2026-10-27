@@ -654,12 +654,15 @@ def settle_cards(session: Session) -> int:
     return changed
 
 
-def rematch_later() -> None:
-    """rematch() in an own session, for a background task after a response:
-    saving a fixed cost should not wait for thousands of bookings."""
+def rematch_later(household_id: int) -> None:
+    """rematch() of one household in an own session, for a background task
+    after a response: saving a fixed cost should not wait for thousands of
+    bookings."""
+    from . import tenancy
     from .db import SessionLocal
 
     with SessionLocal() as session:
+        tenancy.bind(session, household_id)
         rematch(session)
 
 

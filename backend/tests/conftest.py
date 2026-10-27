@@ -21,7 +21,8 @@ import pytest  # noqa: E402
 from sqlalchemy import text  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from haushalt_api.db import Base, engine, init_db  # noqa: E402
+from haushalt_api import tenancy  # noqa: E402
+from haushalt_api.db import Base, SessionLocal, create_household, engine, init_db  # noqa: E402
 from haushalt_api.main import app  # noqa: E402
 from haushalt_api.ratelimit import login_limiter  # noqa: E402
 
@@ -34,11 +35,21 @@ PNG_1PX = bytes.fromhex(
 )
 
 
-@pytest.fixture(autouse=True)
-def fresh_db():
+@pytest.fixture(scope="session", autouse=True)
+def migrated_db():
+    """The schema once per run, built by the migrations alone."""
     Base.metadata.drop_all(engine)
     with engine.begin() as connection:
         connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
+    init_db()
+
+
+@pytest.fixture(autouse=True)
+def fresh_db(migrated_db):
+    # every row goes, the schema stays (migrating per test is slow)
+    with engine.begin() as connection:
+        for table in reversed(Base.metadata.sorted_tables):
+            connection.execute(table.delete())
     init_db()
     login_limiter._failures.clear()
     yield
@@ -57,6 +68,20 @@ def auth(client):
     response = client.post("/api/v1/signup", json={"username": "jochen", "password": PASSWORD})
     assert response.status_code == 201, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+@pytest.fixture
+def session():
+    """A session in a household of its own (tests without the API)."""
+    with SessionLocal() as s:
+        create_household(s, "Test")
+        s.commit()
+        yield s
+
+
+def unscoped():
+    """A session that sees every household (like the CLI)."""
+    return tenancy.unscoped(SessionLocal())
 
 
 @pytest.fixture

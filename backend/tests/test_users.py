@@ -5,7 +5,9 @@ from conftest import PASSWORD
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from conftest import unscoped
 from haushalt_api import admin as admin_cli
+from haushalt_api import tenancy
 from haushalt_api import db as db_module
 from haushalt_api.db import SessionLocal, User
 from haushalt_api.passwords import MIN_LENGTH, one_time_password, problems
@@ -209,7 +211,7 @@ def test_first_existing_account_becomes_admin(tmp_path, monkeypatch):
     monkeypatch.setattr(db_module, "engine", engine)
     monkeypatch.setattr(db_module, "SessionLocal", sessionmaker(bind=engine, expire_on_commit=False))
     db_module.init_db()
-    with db_module.SessionLocal() as session:
+    with tenancy.unscoped(db_module.SessionLocal()) as session:
         users = {u.username: u for u in session.query(User)}
     assert users["b"].is_admin and not users["a"].is_admin
     assert users["a"].token_version == 0 and not users["a"].disabled
@@ -217,7 +219,7 @@ def test_first_existing_account_becomes_admin(tmp_path, monkeypatch):
 
 def test_cli_reset_password_and_make_admin(client, auth, capsys):
     add_member(client, auth)
-    with SessionLocal() as session:
+    with unscoped() as session:
         session.query(User).filter(User.username == "anna").update({"disabled": True})
         session.commit()
     assert admin_cli.main(["make-admin", "anna"]) == 0
