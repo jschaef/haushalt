@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Camera, Eye, Gauge, Landmark, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, Sun } from "lucide-react";
+import { Camera, Eye, Gauge, Landmark, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, ShoppingBasket, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { ScanProvider, useScan } from "@/components/scan";
@@ -18,15 +18,16 @@ import { cn } from "@/lib/utils";
 const NAV: { href: string; label: MessageKey; icon: typeof LayoutGrid }[] = [
   { href: "/dashboard", label: "nav.dashboard", icon: LayoutGrid },
   { href: "/receipts", label: "nav.receipts", icon: Receipt },
+  { href: "/purchases", label: "nav.purchases", icon: ShoppingBasket },
   { href: "/fixed", label: "nav.fixed", icon: Repeat },
   { href: "/utilities", label: "nav.utilities", icon: Gauge },
   { href: "/bank", label: "nav.bank", icon: Landmark },
   { href: "/settings", label: "nav.settings", icon: Settings },
 ];
 
-// phone tab bar: two links, the camera, two links; fixed costs and the bank
-// are reached from the utilities page, the dashboard and the command palette
-const TABS = NAV.filter((item) => item.href !== "/fixed" && item.href !== "/bank");
+// phone tab bar: two links, the camera, two links; fixed costs, the bank and
+// the purchases are reached from other pages and the command palette
+const TABS = NAV.filter((item) => !["/fixed", "/bank", "/purchases"].includes(item.href));
 
 async function logout() {
   await fetch("/api/auth/logout", { method: "POST" });

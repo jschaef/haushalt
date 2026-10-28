@@ -146,6 +146,8 @@ class Category(HouseholdOwned, Base):
     kind: Mapped[str] = mapped_column(String(16), default="variable")
     color: Mapped[str] = mapped_column(String(16), default="#64748b")
     icon: Mapped[str] = mapped_column(String(32), default="tag")
+    # food or not, for the purchases overview (Jochen, 2026-10-28: per category)
+    is_food: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class Store(HouseholdOwned, Base):
@@ -200,6 +202,8 @@ class ReceiptItem(HouseholdOwned, Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     name: Mapped[str] = mapped_column(String(256))
     quantity: Mapped[float] = mapped_column(default=1.0)
+    # what quantity counts: piece, kg or l (weighed goods: 0.532 kg)
+    unit: Mapped[str] = mapped_column(String(8), default="piece")
     unit_price_cents: Mapped[int | None] = mapped_column(Integer)
     # the amount paid: printed price minus the article's discount
     total_cents: Mapped[int] = mapped_column(Integer)
@@ -427,6 +431,9 @@ class UtilityBill(HouseholdOwned, Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+# categories that count as food when they are created (changeable per household)
+FOOD_CATEGORIES = ("groceries", "drinks")
+
 DEFAULT_CATEGORIES = [
     # key, de, en, kind, color, icon
     ("groceries", "Lebensmittel", "Groceries", "variable", "#22c55e", "shopping-basket"),
@@ -528,7 +535,7 @@ def seed_household(session: Session, merchants: bool = True) -> None:
     existing = set(session.scalars(select(Category.key)))
     for key, de, en, kind, color, icon in DEFAULT_CATEGORIES:
         if key not in existing:
-            session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon))
+            session.add(Category(key=key, name_de=de, name_en=en, kind=kind, color=color, icon=icon, is_food=key in FOOD_CATEGORIES))
     session.flush()
     if not merchants:
         return

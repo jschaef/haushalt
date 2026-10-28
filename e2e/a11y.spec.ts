@@ -8,7 +8,7 @@ import { login } from "./helpers";
 
 test.use({ locale: "de-DE" });
 
-const PAGES = ["/dashboard", "/receipts", "/fixed", "/utilities", "/bank", "/settings", "/password"];
+const PAGES = ["/dashboard", "/receipts", "/purchases", "/fixed", "/utilities", "/bank", "/settings", "/password"];
 
 async function violations(page: Page) {
   const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
