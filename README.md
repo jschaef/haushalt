@@ -66,6 +66,53 @@ tailnet only. Put exactly that address into `HAUSHALT_PUBLIC_ORIGIN` in
 web container. (Command from the Tailscale documentation as known to the
 author; not tested in this repository's CI.)
 
+### Access from the local network
+
+Without Tailscale, `deployment/compose.lan.yaml` puts a Caddy with its own
+local CA (`tls internal`) in front of the web app. It serves a name and the
+host's fixed LAN address, the latter for devices that do not resolve the name:
+
+```bash
+# deployment/.env
+HAUSHALT_LAN_HOST=haushalt.example.home     # a name your local DNS points at the host
+HAUSHALT_LAN_IP=192.168.1.10                # the host's fixed LAN address
+HAUSHALT_PUBLIC_ORIGIN=https://haushalt.example.home,https://192.168.1.10
+```
+
+```bash
+docker compose -f deployment/compose.yaml -f deployment/compose.lan.yaml up -d --build
+```
+
+Caddy publishes `HAUSHALT_LAN_IP:8443`, so the app is at
+`https://haushalt.example.home:8443`. Rootless Podman cannot bind port 443; to
+drop the port from the address, redirect 443 to 8443 on the host, e.g. with
+nftables:
+
+```
+table ip haushalt {
+  chain prerouting {
+    type nat hook prerouting priority dstnat; policy accept;
+    ip daddr 192.168.1.10 tcp dport 443 redirect to :8443
+  }
+}
+```
+
+Every device has to trust the CA once. Copy its root certificate out of the
+container:
+
+```bash
+docker compose -f deployment/compose.yaml -f deployment/compose.lan.yaml exec caddy cat /data/caddy/pki/authorities/local/root.crt > haushalt-ca.crt
+```
+
+- macOS: open the file, add it to the "System" keychain, set it to "Always Trust".
+- iOS: send it via AirDrop, install the profile in Settings, then enable it
+  under General → About → Certificate Trust Settings.
+
+The CA lives in the volume `caddy-data`; keep it, or every device has to
+trust a new one. If the host routes the LAN into a tailnet (subnet router),
+the app is reachable from the tailnet too unless the host blocks the port
+there.
+
 ### Members and passwords
 
 The first account is the household admin. Admins add members in the settings:

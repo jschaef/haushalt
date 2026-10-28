@@ -58,3 +58,8 @@ __pycache__/
 /backend/.venv/
 .tmp-*/
 !deployment/.env.example
+
+# database dumps and volume exports hold personal data
+*.sql
+*.dump
+*.tar
