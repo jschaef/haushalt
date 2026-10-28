@@ -95,6 +95,24 @@ operator then lands on `/operator`: create a household together with its first
 admin (who gets a one-time password), rename or disable households, reset a
 household admin's password. Members are managed by each household's admins.
 
+### Scripts with an API token
+
+Scripts on the host upload receipts and bank statements and read data with a
+personal API token: settings → "API-Zugänge für Skripte". The token is shown
+once and valid until it is revoked or its owner's password changes (or the
+account is disabled). It may read everything its owner reads and upload
+receipts (`POST /api/v1/receipts`) and statements (`POST /api/v1/bank/import`),
+nothing else. Managing tokens needs the browser.
+
+```bash
+T=hh_...   # the token
+curl -H "Authorization: Bearer $T" -F files=@bon.jpg http://127.0.0.1:3200/api/v1/receipts
+curl -H "Authorization: Bearer $T" -F file=@umsaetze.csv http://127.0.0.1:3200/api/v1/bank/import
+curl -H "Authorization: Bearer $T" http://127.0.0.1:3200/api/v1/stats/summary
+```
+
+Uploaded receipts wait for review like any other upload.
+
 ### Data and backups
 
 - Database: volume `haushalt-pg`. Backup: `docker compose -f deployment/compose.yaml exec db pg_dump -U haushalt haushalt > haushalt.sql`

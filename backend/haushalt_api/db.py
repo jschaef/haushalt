@@ -113,6 +113,24 @@ class RevokedToken(Base):
     expires_at: Mapped[int] = mapped_column(Integer)
 
 
+class ApiToken(HouseholdOwned, Base):
+    """A member's token for scripts on the host (upload receipts and bank
+    statements, read everything the member reads). Shown once, stored as a
+    hash, valid until revoked or until the account's token_version moves."""
+
+    __tablename__ = "api_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(64))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    # the last characters, so the owner can tell tokens apart
+    hint: Mapped[str] = mapped_column(String(8))
+    # users.token_version at creation: a password change or reset ends the token
+    version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class Category(HouseholdOwned, Base):
     """kind: "variable" (shopping, lifestyle), "fixed" (utilities, rent) or
     "income" (salary, child benefit) - only incoming bank bookings use the

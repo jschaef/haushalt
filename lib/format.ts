@@ -31,6 +31,12 @@ export function shortDate(iso: string | null, locale: Locale): string {
   );
 }
 
+// a timestamp of the API in the browser's time zone
+export function dateTime(iso: string | null, locale: Locale): string {
+  if (!iso) return "";
+  return new Intl.DateTimeFormat(TAGS[locale], { dateStyle: "medium", timeStyle: "short" }).format(new Date(iso));
+}
+
 // "12,34" / "12.34" / "-0,25" -> cents; null for anything else
 export function parseMoney(text: string): number | null {
   const cleaned = text.replace(/[\s€]/g, "");
