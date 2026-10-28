@@ -1,0 +1,16 @@
+# HTTPS for the local network with Caddy's own CA, used by compose.lan.yaml.
+{
+	admin off
+	# listen on 8443 inside the container; no HTTP port, no redirect
+	https_port 8443
+	auto_https disable_redirects
+	# the CA is installed on the devices by hand, not in this container
+	skip_install_trust
+	# browsers send no server name when the app is opened by IP address
+	default_sni {$HAUSHALT_LAN_IP}
+}
+
+{$HAUSHALT_LAN_HOST}, {$HAUSHALT_LAN_IP} {
+	tls internal
+	reverse_proxy web:3200
+}
