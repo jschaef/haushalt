@@ -297,25 +297,33 @@ export function errorFrom(status: number, body: { detail?: unknown }, fallback: 
   return new ApiError(status, fallback);
 }
 
+// A page fires several requests at once; when they all answer 401 or 403,
+// only the first may navigate - every further assignment would abort the
+// navigation already under way.
+let leaving = false;
+
+function leaveTo(url: string) {
+  if (leaving) return;
+  leaving = true;
+  window.location.href = url;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/v1/${path}`, { cache: "no-store", ...init });
   if (response.status === 401 && typeof window !== "undefined" && !path.startsWith("setup")) {
     // session expired or revoked: back to the login, keep the place
-    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    leaveTo(`/login?next=${encodeURIComponent(window.location.pathname)}`);
     throw new ApiError(401, "Not logged in");
   }
   if (!response.ok) {
     const error = errorFrom(response.status, await response.json().catch(() => ({})), response.statusText);
     if (error.message === "operator_only" && typeof window !== "undefined") {
       // the operator has no household: its own page
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = "/operator";
+      leaveTo("/operator");
     }
     if (error.message === "password_change_required" && typeof window !== "undefined") {
       // logged in with a one-time password: replace it first
-      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.href = `/password?next=${encodeURIComponent(window.location.pathname)}`;
+      leaveTo(`/password?next=${encodeURIComponent(window.location.pathname)}`);
     }
     throw error;
   }

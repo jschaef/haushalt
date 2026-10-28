@@ -36,7 +36,8 @@ test("the operator creates a household with its admin and disables it", async ({
 
   // the household pages send the operator back here
   await page.goto("/dashboard");
-  await page.waitForURL("**/operator");
+  await expect(page).toHaveURL(/\/operator$/);
+  await expect(page.getByTestId("new-household")).toBeVisible();
 
   const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22a", "wcag22aa"]).analyze();
   expect(result.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => v.id)).toEqual([]);
