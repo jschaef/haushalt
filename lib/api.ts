@@ -10,6 +10,8 @@ export type Category = {
   kind: "variable" | "fixed" | "income";
   color: string;
   icon: string;
+  // counts as food in the purchases overview
+  is_food: boolean;
 };
 
 // receipts, fixed costs and payments never use an income category
@@ -19,6 +21,8 @@ export type Item = {
   id?: number | null;
   name: string;
   quantity: number;
+  // what quantity counts (weighed goods: kg)
+  unit?: Unit;
   unit_price_cents: number | null;
   // paid: the printed price minus the article's discount
   total_cents: number;
@@ -285,6 +289,61 @@ export type Range = "7d" | "30d" | "90d" | "365d" | "ytd" | "all" | "custom";
 // range "custom": YYYY-MM-DD, end empty = today
 export type CustomRange = { start: string; end: string };
 
+export type Unit = "piece" | "kg" | "l";
+
+// one product of the purchases overview: equal article texts grouped
+export type Product = {
+  key: string;
+  name: string;
+  category_id: number | null;
+  is_food: boolean;
+  total_cents: number;
+  lines: number;
+  quantities: Partial<Record<Unit, number>>;
+  // average price per piece, kg or l
+  average_cents: Partial<Record<Unit, number>>;
+  stores: string[];
+  last_bought: string;
+};
+
+export type Purchases = {
+  start: string;
+  end: string;
+  food_cents: number;
+  nonfood_cents: number;
+  total_cents: number;
+  products: Product[];
+};
+
+export type PurchaseFilter = {
+  range: Range;
+  custom: CustomRange;
+  food: "all" | "food" | "nonfood";
+  store_id: number | null;
+  category_id: number | null;
+  q: string;
+};
+
+export type ProductLine = {
+  receipt_id: number;
+  purchased_on: string;
+  store_name: string;
+  name: string;
+  quantity: number;
+  unit: Unit;
+  total_cents: number;
+  discount_cents: number;
+};
+
+function periodQuery(range: Range, custom: CustomRange): URLSearchParams {
+  const params = new URLSearchParams({ range });
+  if (range === "custom") {
+    params.set("start", custom.start);
+    if (custom.end) params.set("end", custom.end);
+  }
+  return params;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -401,6 +460,20 @@ export const api = {
         : `stats/summary?range=${range}`,
     ),
   resetDate: () => request<{ since: string | null }>("stats/since"),
+  purchases: (filter: PurchaseFilter) => {
+    const params = periodQuery(filter.range, filter.custom);
+    params.set("food", filter.food);
+    if (filter.store_id !== null) params.set("store_id", String(filter.store_id));
+    if (filter.category_id !== null) params.set("category_id", String(filter.category_id));
+    if (filter.q.trim()) params.set("q", filter.q.trim());
+    return request<Purchases>(`purchases?${params}`);
+  },
+  productLines: (key: string, filter: PurchaseFilter) => {
+    const params = periodQuery(filter.range, filter.custom);
+    params.set("key", key);
+    if (filter.store_id !== null) params.set("store_id", String(filter.store_id));
+    return request<ProductLine[]>(`purchases/lines?${params}`);
+  },
   // admins only; null lifts the reset date
   saveResetDate: (since: string | null) => request<{ since: string | null }>("stats/since", json("PUT", { since })),
   meters: () => request<Meter[]>("meters"),

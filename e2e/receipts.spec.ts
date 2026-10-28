@@ -14,15 +14,15 @@ test("single upload opens the editor; edit, save, confirm, list under Bestätigt
   await expect(page.getByTestId("items").locator("li")).toHaveCount(5);
   await expect(page.locator("#total")).toHaveValue(/^12,43/);
 
-  const firstCategory = page.getByTestId("items").locator("li").first().getByRole("combobox");
+  const firstCategory = page.getByTestId("items").locator("li").first().getByRole("combobox", { name: "Kategorie" });
   await firstCategory.selectOption({ label: "Haushalt" });
   await page.getByRole("button", { name: "Speichern" }).click();
   await expect(toast(page, "success").filter({ hasText: "Gespeichert" })).toBeVisible();
 
   // the change was stored: reload and read it back
   await page.reload();
-  await expect(page.getByTestId("items").locator("li").first().getByRole("combobox")).toHaveValue(
-    await page.getByTestId("items").locator("li").first().getByRole("combobox").locator("option", { hasText: "Haushalt" }).getAttribute("value") as string,
+  await expect(page.getByTestId("items").locator("li").first().getByRole("combobox", { name: "Kategorie" })).toHaveValue(
+    await page.getByTestId("items").locator("li").first().getByRole("combobox", { name: "Kategorie" }).locator("option", { hasText: "Haushalt" }).getAttribute("value") as string,
   );
 
   await page.getByRole("button", { name: "Bestätigen" }).click();

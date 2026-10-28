@@ -110,6 +110,15 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   (`receipts.same_purchase`); without TSE it stays a warning (`duplicates`),
   which a different time or TSE number lifts. The fake reader takes a TSE
   number from `fake-tse:<n>` bytes after the image (tests).
+- Purchases (Jochen, 2026-10-28; `purchases_api.py`, page `/purchases`,
+  migration `0005`): what was bought, from the lines of confirmed receipts
+  only. Food or not per category (`Category.is_food`, groceries and drinks
+  by default; a category update without it keeps it). Items carry a `unit`
+  (piece|kg|l, read by the model; older items are pieces). Products are
+  grouped by `normalize(name)` with sums, quantities per unit, average
+  price per unit, stores; filters period/food/store/category/search; the
+  food filter leaves the food/non-food sums alone. Phones reach the page
+  from the receipts page and the palette (four tabs only).
 - Tags (Jochen, 2026-10-23; `tags_api.py`): for whom/what for, next to the one
   category, only on bank bookings (status `counted`) and recurring costs.
   Tag sums overlap (no shares). Learned per bank counterparty like the

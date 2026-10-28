@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, spendingCategories, type Category, type Item, type Receipt } from "@/lib/api";
+import { api, spendingCategories, type Category, type Item, type Receipt, type Unit } from "@/lib/api";
 import { centsToInput, money, parseMoney } from "@/lib/format";
 import { haptic, useData } from "@/lib/hooks";
 import { useI18n } from "@/lib/i18n/provider";
@@ -25,6 +25,7 @@ type Row = {
   id: number | null;
   name: string;
   quantity: string;
+  unit: Unit;
   amount: string;
   discount: string;
   discount_label: string;
@@ -37,6 +38,7 @@ type Row = {
 type Draft = { store_name: string; purchased_on: string; purchased_at: string; receipt_number: string; total: string; rows: Row[] };
 
 let nextKey = 0;
+const UNITS: Unit[] = ["piece", "kg", "l"];
 const MAX_DUPLICATE_LINKS = 5;
 
 function toDraft(receipt: Receipt, locale: Locale): Draft {
@@ -51,6 +53,7 @@ function toDraft(receipt: Receipt, locale: Locale): Draft {
       id: item.id ?? null,
       name: item.name,
       quantity: String(item.quantity),
+      unit: item.unit ?? "piece",
       amount: centsToInput(item.total_cents + (item.discount_cents ?? 0), locale),
       discount: item.discount_cents ? centsToInput(item.discount_cents, locale) : "",
       discount_label: item.discount_label ?? "",
@@ -74,6 +77,7 @@ function toPatch(draft: Draft) {
       id: row.id,
       name: row.name.trim(),
       quantity,
+      unit: row.unit,
       total_cents: cents - discount,
       discount_cents: discount,
       discount_label: discount ? row.discount_label : "",
@@ -296,7 +300,7 @@ export function ReceiptEditor({ id }: { id: number }) {
           <Tile index={2} title={`${t("receipt.items")} (${draft.rows.length})`}>
             <ul className="space-y-2" data-testid="items">
               {draft.rows.map((row) => (
-                <li key={row.key} className="grid grid-cols-[1fr_5.5rem_auto] items-center gap-2 rounded-xl bg-muted/40 p-2 sm:grid-cols-[1fr_4rem_6rem_11rem_auto]">
+                <li key={row.key} className="grid grid-cols-[1fr_5.5rem_auto] items-center gap-2 rounded-xl bg-muted/40 p-2 sm:grid-cols-[1fr_4rem_4.5rem_6rem_11rem_auto]">
                   <Input value={row.name} aria-label={t("receipt.item")} onChange={(e) => updateRow(row.key, { name: e.target.value })} className="col-span-2 sm:col-span-1" />
                   <Input
                     value={row.quantity}
@@ -305,6 +309,18 @@ export function ReceiptEditor({ id }: { id: number }) {
                     onChange={(e) => updateRow(row.key, { quantity: e.target.value })}
                     className="tabular hidden text-right sm:block"
                   />
+                  <select
+                    value={row.unit}
+                    aria-label={t("receipt.unit")}
+                    onChange={(e) => updateRow(row.key, { unit: e.target.value as Unit })}
+                    className="hidden h-8 rounded-lg border border-input bg-transparent px-1 text-sm sm:block dark:bg-input/30"
+                  >
+                    {UNITS.map((unit) => (
+                      <option key={unit} value={unit}>
+                        {t(`unit.${unit}`)}
+                      </option>
+                    ))}
+                  </select>
                   <Input
                     value={row.amount}
                     inputMode="decimal"
@@ -336,7 +352,7 @@ export function ReceiptEditor({ id }: { id: number }) {
                 update({
                   rows: [
                     ...draft.rows,
-                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null },
+                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", unit: "piece", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null },
                   ],
                 })
               }

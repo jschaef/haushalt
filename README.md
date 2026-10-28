@@ -13,6 +13,9 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
   article. Time, receipt number and TSE transaction are kept when printed; a
   receipt with the same TSE transaction is not added twice, other probable
   duplicates are flagged.
+- **Purchases:** every article bought, food and non-food (set per category),
+  with sums and quantities (pieces, kg, l) per period, search and filters by
+  store and category.
 - **Fixed costs:** monthly instalments and yearly bills are spread evenly over
   their period, so averages stay honest.
 - **Utilities:** meters for electricity, gas and water; photograph the meter and

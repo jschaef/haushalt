@@ -164,6 +164,9 @@ export function ReceiptList() {
           {t("receipts.title")}
           {store && <span className="text-muted-foreground"> · {store}</span>}
         </h1>
+        <Link href="/purchases" className="text-sm text-primary underline-offset-4 hover:underline" data-testid="purchases-link">
+          {t("nav.purchases")} →
+        </Link>
         <div className="glass flex gap-1 rounded-xl p-1" role="tablist">
           {(["all", "draft", "confirmed"] as Filter[]).map((value) => (
             <button
