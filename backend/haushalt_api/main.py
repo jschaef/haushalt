@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking, banking_api, config, operator_api, receipts, smartmeter, smartmeter_api, stats, tags_api, tenancy, tokens_api, utilities_api
+from . import banking, banking_api, config, operator_api, purchases_api, receipts, smartmeter, smartmeter_api, stats, tags_api, tenancy, tokens_api, utilities_api
 from .auth import (
     TokenClaims,
     admin_user,
@@ -89,6 +89,7 @@ app.include_router(banking_api.router)
 app.include_router(tags_api.router)
 app.include_router(operator_api.router)
 app.include_router(tokens_api.router)
+app.include_router(purchases_api.router)
 PREFIX = "/api/v1"
 LOCALES = ("de", "en")
 
@@ -157,16 +158,20 @@ class CategoryIn(BaseModel):
     kind: str = Field(default="variable", pattern=r"^(variable|fixed|income)$")
     color: str = Field(default="#64748b", pattern=r"^#[0-9a-fA-F]{6}$")
     icon: str = Field(default="tag", max_length=32)
+    # None keeps it (an update that does not know it must not drop it)
+    is_food: bool | None = None
 
 
 class CategoryOut(CategoryIn):
     id: int
+    is_food: bool
 
 
 class ItemIn(BaseModel):
     id: int | None = None
     name: str = Field(min_length=1, max_length=256)
     quantity: float = 1.0
+    unit: str = Field(default="piece", pattern=r"^(piece|kg|l)$")
     unit_price_cents: int | None = None
     # paid: the printed price minus the discount
     total_cents: int
@@ -242,6 +247,7 @@ def receipt_out(receipt: Receipt, session: Session | None = None) -> ReceiptOut:
             id=i.id,
             name=i.name,
             quantity=i.quantity,
+            unit=i.unit,
             unit_price_cents=i.unit_price_cents,
             total_cents=i.total_cents,
             discount_cents=i.discount_cents,
@@ -552,7 +558,7 @@ def list_categories(_user: User = Depends(current_user), session: Session = Depe
 def create_category(body: CategoryIn, _user: User = Depends(current_user), session: Session = Depends(get_session)):
     if session.scalar(select(Category).where(Category.key == body.key)):
         raise HTTPException(status_code=409, detail="Category key exists")
-    category = Category(**body.model_dump())
+    category = Category(**{**body.model_dump(), "is_food": bool(body.is_food)})
     session.add(category)
     session.commit()
     return CategoryOut.model_validate(category, from_attributes=True)
@@ -568,7 +574,7 @@ def update_category(
     clash = session.scalar(select(Category).where(Category.key == body.key, Category.id != category_id))
     if clash:
         raise HTTPException(status_code=409, detail="Category key exists")
-    for field, value in body.model_dump().items():
+    for field, value in body.model_dump(exclude_none=True).items():
         setattr(category, field, value)
     session.commit()
     return CategoryOut.model_validate(category, from_attributes=True)

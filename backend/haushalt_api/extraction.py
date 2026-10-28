@@ -62,6 +62,8 @@ class ExtractedItem:
     # paid: printed price minus discount_cents
     total_cents: int
     quantity: float = 1.0
+    # piece, kg or l: what quantity counts
+    unit: str = "piece"
     unit_price_cents: int | None = None
     category_key: str | None = None
     discount_cents: int = 0
@@ -112,6 +114,9 @@ def _time(value) -> time | None:
         return None
 
 
+UNITS = ("piece", "kg", "l")
+
+
 def _item(item: dict) -> ExtractedItem:
     printed = _cents(item.get("total")) or 0
     # the discount belongs to this article: what was paid is the price minus it
@@ -120,6 +125,7 @@ def _item(item: dict) -> ExtractedItem:
         name=str(item.get("name", "")).strip()[:256] or "?",
         total_cents=printed - discount,
         quantity=float(item.get("quantity") or 1),
+        unit=item.get("unit") if item.get("unit") in UNITS else "piece",
         unit_price_cents=_cents(item.get("unit_price")),
         category_key=item.get("category"),
         discount_cents=discount,
@@ -179,13 +185,14 @@ def receipt_schema(category_keys: list[str]) -> dict:
                     "properties": {
                         "name": {"type": "string"},
                         "quantity": {"type": "number"},
+                        "unit": {"type": "string", "enum": list(UNITS)},
                         "unit_price": nullable_number,
                         "total": {"type": "number"},
                         "discount": nullable_number,
                         "discount_label": nullable_text,
                         "category": {"type": "string", "enum": category_keys},
                     },
-                    "required": ["name", "quantity", "unit_price", "total", "discount", "discount_label", "category"],
+                    "required": ["name", "quantity", "unit", "unit_price", "total", "discount", "discount_label", "category"],
                     "additionalProperties": False,
                 },
             },
@@ -211,6 +218,10 @@ PROMPT = """Read this shopping receipt (usually German) and return its content a
 - items: one entry per article line in receipt order. Use the article text as printed,
   expanded only where an abbreviation is obvious. quantity and unit_price come from lines
   like "2 x 1,29"; total is the line amount as printed.
+- unit: what quantity counts. Weighed or measured goods ("0,532 kg x 2,99 EUR/kg")
+  use the weight in kg or the volume in l as quantity (grams and ml converted: 500 g ->
+  0.5 kg); everything else is piece with the number of pieces (also packs like
+  "Milch 1L", which is one piece).
 - A discount printed directly under an article for that article ("Preisvorteil",
   "Rabatt", "Aktion", "Coupon" with the article's price reduced) is not an item of its own:
   put its amount as a positive number into that article's discount and its text into
@@ -343,12 +354,12 @@ FAKE_RECEIPT = {
     "total": 12.43,
     "payment_method": "card",
     "items": [
-        {"name": "JA! Frischmilch 3,5% 1L", "quantity": 2, "unit_price": 1.09, "total": 2.18, "category": "groceries"},
-        {"name": "Bio Bananen", "quantity": 1, "unit_price": None, "total": 2.29, "discount": 0.30,
+        {"name": "JA! Frischmilch 3,5% 1L", "quantity": 2, "unit": "piece", "unit_price": 1.09, "total": 2.18, "category": "groceries"},
+        {"name": "Bio Bananen", "quantity": 1.15, "unit": "kg", "unit_price": 1.99, "total": 2.29, "discount": 0.30,
          "discount_label": "Preisvorteil", "category": "groceries"},
-        {"name": "Mineralwasser 6x1,5L", "quantity": 1, "unit_price": None, "total": 3.54, "category": "drinks"},
-        {"name": "Pfand", "quantity": 1, "unit_price": None, "total": 1.50, "category": "deposit"},
-        {"name": "Spülmittel", "quantity": 1, "unit_price": None, "total": 3.22, "category": "household"},
+        {"name": "Mineralwasser 6x1,5L", "quantity": 1, "unit": "piece", "unit_price": None, "total": 3.54, "category": "drinks"},
+        {"name": "Pfand", "quantity": 1, "unit": "piece", "unit_price": None, "total": 1.50, "category": "deposit"},
+        {"name": "Spülmittel", "quantity": 1, "unit": "piece", "unit_price": None, "total": 3.22, "category": "household"},
     ],
 }
 

@@ -330,7 +330,7 @@ function MembersTile() {
   );
 }
 
-type CategoryDraft = { key: string; name_de: string; name_en: string; kind: Category["kind"]; color: string };
+type CategoryDraft = { key: string; name_de: string; name_en: string; kind: Category["kind"]; color: string; is_food: boolean };
 
 // The key is an internal id; anything typed is turned into a valid one, and
 // without input it comes from the German name. The hint shows the result.
@@ -394,6 +394,10 @@ function CategoryFields({
         <Label htmlFor={`${idPrefix}-color`}>{t("settings.color")}</Label>
         <input id={`${idPrefix}-color`} type="color" value={draft.color} onChange={(e) => onChange({ color: e.target.value })} className={COLOR_CLASS} />
       </div>
+      <label className="flex items-center gap-2 self-end pb-2 text-sm">
+        <input type="checkbox" checked={draft.is_food} onChange={(e) => onChange({ is_food: e.target.checked })} className="size-4" />
+        {t("settings.isFood")}
+      </label>
     </>
   );
 }
@@ -418,6 +422,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
         kind: draft.kind,
         color: draft.color,
         icon: category.icon,
+        is_food: draft.is_food,
       };
       await api.updateCategory(category.id, body);
       toast.success(t("receipt.saved"));
@@ -440,6 +445,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
           <span className="font-medium">{locale === "de" ? category.name_de : category.name_en}</span>
           <span className="ml-2 text-xs text-muted-foreground">{locale === "de" ? category.name_en : category.name_de}</span>
         </span>
+        {category.is_food && <Badge variant="outline">{t("settings.isFood")}</Badge>}
         <Badge variant={category.kind === "fixed" ? "default" : category.kind === "income" ? "outline" : "secondary"}>{kindLabel}</Badge>
         <Button
           variant="ghost"
@@ -475,7 +481,7 @@ function CategoryRow({ category, onSaved }: { category: Category; onSaved: () =>
 function CategoriesTile() {
   const { t } = useI18n();
   const categories = useData(() => api.categories(), "categories");
-  const empty: CategoryDraft = { key: "", name_de: "", name_en: "", kind: "variable", color: "#6366f1" };
+  const empty: CategoryDraft = { key: "", name_de: "", name_en: "", kind: "variable", color: "#6366f1", is_food: false };
   const [draft, setDraft] = useState<CategoryDraft>(empty);
   const [busy, setBusy] = useState(false);
   const key = effectiveKey(draft.key, draft.name_de);
@@ -493,6 +499,7 @@ function CategoriesTile() {
         kind: draft.kind,
         color: draft.color,
         icon: "",
+        is_food: draft.is_food,
       });
       toast.success(t("settings.addCategory"));
       setDraft(empty);
@@ -511,13 +518,17 @@ function CategoriesTile() {
       ) : (
         <ul className="space-y-1.5">
           {categories.data.map((category) => (
-            <CategoryRow key={`${category.id}:${category.name_de}:${category.name_en}:${category.kind}:${category.color}`} category={category} onSaved={categories.reload} />
+            <CategoryRow
+              key={`${category.id}:${category.name_de}:${category.name_en}:${category.kind}:${category.color}:${category.is_food}`}
+              category={category}
+              onSaved={categories.reload}
+            />
           ))}
         </ul>
       )}
       <form onSubmit={submit} className="space-y-3 border-t pt-3">
         <h3 className="text-sm font-medium">{t("settings.addCategory")}</h3>
-        <div className={cn("grid gap-3 sm:grid-cols-2 lg:grid-cols-5")}>
+        <div className={cn("grid gap-3 sm:grid-cols-2 lg:grid-cols-6")}>
           <CategoryFields idPrefix="cat-new" draft={draft} withKey onChange={(changes) => setDraft({ ...draft, ...changes })} />
         </div>
         <Button type="submit" disabled={busy || !valid}>

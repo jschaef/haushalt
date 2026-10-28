@@ -41,7 +41,7 @@ function saveChosen(chosen: Chosen) {
   }
 }
 
-function CustomRangeFields({ value, onChange }: { value: CustomRange; onChange: (c: CustomRange) => void }) {
+export function CustomRangeFields({ value, onChange }: { value: CustomRange; onChange: (c: CustomRange) => void }) {
   const { t } = useI18n();
   return (
     <div className="glass flex flex-wrap items-end gap-3 rounded-xl p-3" data-testid="custom-range">
@@ -78,7 +78,7 @@ function CustomRangeFields({ value, onChange }: { value: CustomRange; onChange: 
   );
 }
 
-function RangePicker({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
+export function RangePicker({ value, onChange }: { value: Range; onChange: (r: Range) => void }) {
   const { t } = useI18n();
   return (
     <div className="glass flex gap-1 overflow-x-auto rounded-xl p-1" role="tablist">
