@@ -10,7 +10,7 @@ import io
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, time
 from typing import Protocol
 
 from PIL import Image, ImageOps
@@ -59,10 +59,13 @@ class ExtractionError(Exception):
 @dataclass
 class ExtractedItem:
     name: str
+    # paid: printed price minus discount_cents
     total_cents: int
     quantity: float = 1.0
     unit_price_cents: int | None = None
     category_key: str | None = None
+    discount_cents: int = 0
+    discount_label: str = ""
 
 
 @dataclass
@@ -70,6 +73,10 @@ class ExtractedReceipt:
     is_receipt: bool
     store_name: str = ""
     purchased_on: date | None = None
+    purchased_at: time | None = None
+    receipt_number: str = ""
+    tse_transaction: str = ""
+    tse_serial: str = ""
     total_cents: int = 0
     currency: str = "EUR"
     payment_method: str = ""
@@ -91,24 +98,45 @@ def _cents(value) -> int | None:
     return int(round(float(value) * 100))
 
 
+def _text(value, limit: int) -> str:
+    """A printed number or code; whitespace collapsed, "" when missing."""
+    return " ".join(str(value).split())[:limit] if value is not None else ""
+
+
+def _time(value) -> time | None:
+    if not value:
+        return None
+    try:
+        return time.fromisoformat(str(value).strip())
+    except ValueError:
+        return None
+
+
+def _item(item: dict) -> ExtractedItem:
+    printed = _cents(item.get("total")) or 0
+    # the discount belongs to this article: what was paid is the price minus it
+    discount = abs(_cents(item.get("discount")) or 0)
+    return ExtractedItem(
+        name=str(item.get("name", "")).strip()[:256] or "?",
+        total_cents=printed - discount,
+        quantity=float(item.get("quantity") or 1),
+        unit_price_cents=_cents(item.get("unit_price")),
+        category_key=item.get("category"),
+        discount_cents=discount,
+        discount_label=_text(item.get("discount_label"), 64) if discount else "",
+    )
+
+
 def parse_result(raw: dict) -> ExtractedReceipt:
-    """Turn the model's JSON (amounts in currency units) into cents."""
+    """Turn the model's JSON (amounts in currency units) into cents. Values
+    that are not printed (time, TSE, receipt number) stay empty."""
     purchased_on = None
     if raw.get("purchased_on"):
         try:
             purchased_on = date.fromisoformat(raw["purchased_on"])
         except ValueError:
             purchased_on = None
-    items = [
-        ExtractedItem(
-            name=str(item.get("name", "")).strip()[:256] or "?",
-            total_cents=_cents(item.get("total")) or 0,
-            quantity=float(item.get("quantity") or 1),
-            unit_price_cents=_cents(item.get("unit_price")),
-            category_key=item.get("category"),
-        )
-        for item in raw.get("items") or []
-    ]
+    items = [_item(item) for item in raw.get("items") or [] if isinstance(item, dict)]
     total = _cents(raw.get("total"))
     if total is None:
         total = sum(item.total_cents for item in items)
@@ -116,6 +144,10 @@ def parse_result(raw: dict) -> ExtractedReceipt:
         is_receipt=bool(raw.get("is_receipt", True)),
         store_name=str(raw.get("store_name") or "").strip()[:128],
         purchased_on=purchased_on,
+        purchased_at=_time(raw.get("purchased_time")),
+        receipt_number=_text(raw.get("receipt_number"), 32),
+        tse_transaction=_text(raw.get("tse_transaction"), 64),
+        tse_serial=_text(raw.get("tse_serial"), 128),
         total_cents=total,
         currency=(raw.get("currency") or "EUR").upper()[:3],
         payment_method=str(raw.get("payment_method") or "")[:32],
@@ -126,12 +158,17 @@ def parse_result(raw: dict) -> ExtractedReceipt:
 
 def receipt_schema(category_keys: list[str]) -> dict:
     nullable_number = {"type": ["number", "null"]}
+    nullable_text = {"type": ["string", "null"]}
     return {
         "type": "object",
         "properties": {
             "is_receipt": {"type": "boolean"},
             "store_name": {"type": "string"},
             "purchased_on": {"type": ["string", "null"], "description": "YYYY-MM-DD"},
+            "purchased_time": {"type": ["string", "null"], "description": "HH:MM"},
+            "receipt_number": nullable_text,
+            "tse_transaction": nullable_text,
+            "tse_serial": nullable_text,
             "currency": {"type": "string"},
             "total": nullable_number,
             "payment_method": {"type": "string", "enum": ["cash", "card", "other", "unknown"]},
@@ -144,14 +181,19 @@ def receipt_schema(category_keys: list[str]) -> dict:
                         "quantity": {"type": "number"},
                         "unit_price": nullable_number,
                         "total": {"type": "number"},
+                        "discount": nullable_number,
+                        "discount_label": nullable_text,
                         "category": {"type": "string", "enum": category_keys},
                     },
-                    "required": ["name", "quantity", "unit_price", "total", "category"],
+                    "required": ["name", "quantity", "unit_price", "total", "discount", "discount_label", "category"],
                     "additionalProperties": False,
                 },
             },
         },
-        "required": ["is_receipt", "store_name", "purchased_on", "currency", "total", "payment_method", "items"],
+        "required": [
+            "is_receipt", "store_name", "purchased_on", "purchased_time", "receipt_number", "tse_transaction",
+            "tse_serial", "currency", "total", "payment_method", "items",
+        ],
         "additionalProperties": False,
     }
 
@@ -160,12 +202,24 @@ PROMPT = """Read this shopping receipt (usually German) and return its content a
 
 - store_name: the shop or chain as a person would name it (e.g. "REWE", "Aldi Süd", "dm").
 - purchased_on: purchase date as YYYY-MM-DD, null if not printed.
+- purchased_time: time of the purchase as HH:MM (24 h), null if not printed. With a TSE
+  block prefer its start time.
+- receipt_number: the store's receipt number ("Bon-Nr.", "Beleg-Nr."), null if not printed.
+- tse_transaction: the TSE transaction number ("TSE-Transaktion", "Transaktionsnummer",
+  "TA-Nr."), tse_serial: the TSE serial number ("TSE-Seriennummer", "Kassen-Serien-Nr."),
+  each exactly as printed, null if not printed. Never invent them.
 - items: one entry per article line in receipt order. Use the article text as printed,
   expanded only where an abbreviation is obvious. quantity and unit_price come from lines
-  like "2 x 1,29"; total is the line amount. Discounts, coupons and returned deposit
-  (Pfand, Leergut) are their own items with a negative total. Do not list subtotals,
-  tax lines, payment lines or change.
-- total: the amount paid. The item totals should add up to it.
+  like "2 x 1,29"; total is the line amount as printed.
+- A discount printed directly under an article for that article ("Preisvorteil",
+  "Rabatt", "Aktion", "Coupon" with the article's price reduced) is not an item of its own:
+  put its amount as a positive number into that article's discount and its text into
+  discount_label; total stays the printed price. Otherwise discount and discount_label
+  are null.
+- Discounts on the whole purchase (a percentage on everything, a receipt coupon) and
+  returned deposit (Pfand, Leergut) are their own items with a negative total. Do not list
+  subtotals, tax lines, payment lines or change.
+- total: the amount paid. The item totals minus their discounts should add up to it.
 - category: the best fitting key; deposit lines use "deposit" if that key exists.
 - Amounts are plain numbers in the receipt currency (1,29 € -> 1.29).
 - If the image is not a receipt or invoice, set is_receipt to false and leave items empty."""
@@ -281,17 +335,25 @@ FAKE_RECEIPT = {
     "is_receipt": True,
     "store_name": "REWE",
     "purchased_on": None,  # today, filled in by FakeExtractor
+    "purchased_time": "18:05",
+    "receipt_number": "4711",
+    "tse_transaction": None,  # from FAKE_TSE in the file, see FakeExtractor
+    "tse_serial": None,
     "currency": "EUR",
     "total": 12.43,
     "payment_method": "card",
     "items": [
         {"name": "JA! Frischmilch 3,5% 1L", "quantity": 2, "unit_price": 1.09, "total": 2.18, "category": "groceries"},
-        {"name": "Bio Bananen", "quantity": 1, "unit_price": None, "total": 1.99, "category": "groceries"},
+        {"name": "Bio Bananen", "quantity": 1, "unit_price": None, "total": 2.29, "discount": 0.30,
+         "discount_label": "Preisvorteil", "category": "groceries"},
         {"name": "Mineralwasser 6x1,5L", "quantity": 1, "unit_price": None, "total": 3.54, "category": "drinks"},
         {"name": "Pfand", "quantity": 1, "unit_price": None, "total": 1.50, "category": "deposit"},
         {"name": "Spülmittel", "quantity": 1, "unit_price": None, "total": 3.22, "category": "household"},
     ],
 }
+
+
+FAKE_TSE = b"fake-tse:"
 
 
 class FakeExtractor:
@@ -313,6 +375,11 @@ class FakeExtractor:
             raise ExtractionError(f"Unsupported file type {media_type}")
         raw = json.loads(json.dumps(FAKE_RECEIPT))
         raw["purchased_on"] = date.today().isoformat()
+        # tests mark a "printed" TSE transaction with bytes after the image
+        marker = data.rfind(FAKE_TSE)
+        if marker >= 0:
+            raw["tse_transaction"] = (data[marker + len(FAKE_TSE):].split() or [b""])[0].decode(errors="replace")
+            raw["tse_serial"] = "fake-tse-serial"
         return parse_result(raw)
 
 

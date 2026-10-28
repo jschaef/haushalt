@@ -20,7 +20,10 @@ export type Item = {
   name: string;
   quantity: number;
   unit_price_cents: number | null;
+  // paid: the printed price minus the article's discount
   total_cents: number;
+  discount_cents?: number;
+  discount_label?: string;
   category_id: number | null;
 };
 
@@ -30,6 +33,11 @@ export type Receipt = {
   source: "photo" | "pdf";
   store_name: string;
   purchased_on: string | null;
+  // "HH:MM:SS"; time, receipt number and TSE only when printed
+  purchased_at: string | null;
+  receipt_number: string;
+  tse_transaction: string;
+  tse_serial: string;
   total_cents: number;
   currency: string;
   payment_method: string;
@@ -42,6 +50,8 @@ export type Receipt = {
   duplicates: number[];
   // photo/PDF deleted after the retention period (data stays)
   file_deleted: boolean;
+  // an upload of a receipt already recorded: this is the existing one
+  already_present?: boolean;
 };
 
 export type Averages = { day: number; week: number; month: number; year: number };
@@ -370,7 +380,10 @@ export const api = {
     for (const file of files) form.append("files", file);
     return request<Receipt[]>("receipts", { method: "POST", body: form });
   },
-  updateReceipt: (id: number, patch: Partial<Pick<Receipt, "purchased_on" | "total_cents" | "items">> & { store_name?: string }) =>
+  updateReceipt: (
+    id: number,
+    patch: Partial<Pick<Receipt, "purchased_on" | "purchased_at" | "receipt_number" | "total_cents" | "items">> & { store_name?: string },
+  ) =>
     request<Receipt>(`receipts/${id}`, json("PATCH", patch)),
   confirmReceipt: (id: number) => request<Receipt>(`receipts/${id}/confirm`, { method: "POST" }),
   rereadReceipt: (id: number) => request<Receipt>(`receipts/${id}/reread`, { method: "POST" }),

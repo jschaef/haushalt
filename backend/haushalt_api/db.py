@@ -6,7 +6,7 @@ household. All members of a household see the same data; receipts remember
 who uploaded them. SQLite by default, any SQLAlchemy URL works (PostgreSQL).
 """
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -20,6 +20,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Time,
     UniqueConstraint,
     create_engine,
     inspect,
@@ -165,6 +166,13 @@ class Receipt(HouseholdOwned, Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.id"))
     purchased_on: Mapped[date | None] = mapped_column(Date)
+    # read from the receipt when printed, else empty
+    purchased_at: Mapped[time | None] = mapped_column(Time)
+    receipt_number: Mapped[str] = mapped_column(String(32), default="")
+    # TSE (KassenSichV) transaction number and serial: one purchase per register,
+    # so the same receipt read twice is recognised
+    tse_transaction: Mapped[str] = mapped_column(String(64), default="")
+    tse_serial: Mapped[str] = mapped_column(String(128), default="")
     total_cents: Mapped[int] = mapped_column(Integer, default=0)
     currency: Mapped[str] = mapped_column(String(3), default="EUR")
     payment_method: Mapped[str] = mapped_column(String(32), default="")
@@ -193,7 +201,11 @@ class ReceiptItem(HouseholdOwned, Base):
     name: Mapped[str] = mapped_column(String(256))
     quantity: Mapped[float] = mapped_column(default=1.0)
     unit_price_cents: Mapped[int | None] = mapped_column(Integer)
+    # the amount paid: printed price minus the article's discount
     total_cents: Mapped[int] = mapped_column(Integer)
+    # a discount printed under the article ("Preisvorteil 0,30"), positive
+    discount_cents: Mapped[int] = mapped_column(Integer, default=0)
+    discount_label: Mapped[str] = mapped_column(String(64), default="")
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
 
     receipt: Mapped[Receipt] = relationship(back_populates="items")
