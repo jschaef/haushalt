@@ -101,7 +101,7 @@ Every device has to trust the CA once. Copy its root certificate out of the
 container:
 
 ```bash
-docker compose -f deployment/compose.yaml -f deployment/compose.lan.yaml exec caddy cat /data/caddy/pki/authorities/local/root.crt > haushalt-ca.crt
+docker compose -f deployment/compose.yaml -f deployment/compose.lan.yaml exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > haushalt-ca.crt
 ```
 
 - macOS: open the file, add it to the "System" keychain, set it to "Always Trust".
