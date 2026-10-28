@@ -18,9 +18,23 @@ import { byName } from "@/lib/sort";
 import type { Locale } from "@/lib/i18n/messages";
 import { cn } from "@/lib/utils";
 
-type Row = { key: string; id: number | null; name: string; quantity: string; amount: string; category_id: number | null; unit_price_cents: number | null };
+// amount is the printed price; a discount printed under the article
+// ("Preisvorteil") is part of the row, what was paid is amount - discount
+type Row = {
+  key: string;
+  id: number | null;
+  name: string;
+  quantity: string;
+  amount: string;
+  discount: string;
+  discount_label: string;
+  // shows the discount line; stays while its field is being retyped
+  discounted: boolean;
+  category_id: number | null;
+  unit_price_cents: number | null;
+};
 
-type Draft = { store_name: string; purchased_on: string; total: string; rows: Row[] };
+type Draft = { store_name: string; purchased_on: string; purchased_at: string; receipt_number: string; total: string; rows: Row[] };
 
 let nextKey = 0;
 const MAX_DUPLICATE_LINKS = 5;
@@ -29,13 +43,18 @@ function toDraft(receipt: Receipt, locale: Locale): Draft {
   return {
     store_name: receipt.store_name,
     purchased_on: receipt.purchased_on ?? "",
+    purchased_at: receipt.purchased_at?.slice(0, 5) ?? "",
+    receipt_number: receipt.receipt_number,
     total: centsToInput(receipt.total_cents, locale),
     rows: receipt.items.map((item) => ({
       key: `r${nextKey++}`,
       id: item.id ?? null,
       name: item.name,
       quantity: String(item.quantity),
-      amount: centsToInput(item.total_cents, locale),
+      amount: centsToInput(item.total_cents + (item.discount_cents ?? 0), locale),
+      discount: item.discount_cents ? centsToInput(item.discount_cents, locale) : "",
+      discount_label: item.discount_label ?? "",
+      discounted: Boolean(item.discount_cents),
       category_id: item.category_id,
       unit_price_cents: item.unit_price_cents,
     })),
@@ -48,12 +67,36 @@ function toPatch(draft: Draft) {
   const items: Item[] = [];
   for (const row of draft.rows) {
     const cents = parseMoney(row.amount);
+    const discount = discountCents(row);
     const quantity = Number(row.quantity.replace(",", "."));
-    if (cents === null || !row.name.trim() || !Number.isFinite(quantity)) return null;
-    items.push({ id: row.id, name: row.name.trim(), quantity, total_cents: cents, category_id: row.category_id, unit_price_cents: row.unit_price_cents });
+    if (cents === null || discount === null || !row.name.trim() || !Number.isFinite(quantity)) return null;
+    items.push({
+      id: row.id,
+      name: row.name.trim(),
+      quantity,
+      total_cents: cents - discount,
+      discount_cents: discount,
+      discount_label: discount ? row.discount_label : "",
+      category_id: row.category_id,
+      unit_price_cents: row.unit_price_cents,
+    });
   }
   if (total === null) return null;
-  return { store_name: draft.store_name, purchased_on: draft.purchased_on || null, total_cents: total, items };
+  return {
+    store_name: draft.store_name,
+    purchased_on: draft.purchased_on || null,
+    purchased_at: draft.purchased_at || null,
+    receipt_number: draft.receipt_number.trim(),
+    total_cents: total,
+    items,
+  };
+}
+
+// "0,30" or "-0,30" -> 30; empty -> 0; null when it does not parse
+function discountCents(row: Row): number | null {
+  if (!row.discount.trim()) return 0;
+  const cents = parseMoney(row.discount);
+  return cents === null ? null : Math.abs(cents);
 }
 
 function CategorySelect({ value, categories, onChange }: { value: number | null; categories: Category[]; onChange: (id: number | null) => void }) {
@@ -75,6 +118,27 @@ function CategorySelect({ value, categories, onChange }: { value: number | null;
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function DiscountLine({ row, onChange }: { row: Row; onChange: (changes: Partial<Row>) => void }) {
+  const { t, locale } = useI18n();
+  const price = parseMoney(row.amount);
+  const discount = discountCents(row);
+  return (
+    <div className="col-span-full flex flex-wrap items-center justify-end gap-2 text-sm text-muted-foreground" data-testid="discount">
+      <span className="min-w-0 truncate">{row.discount_label || t("receipt.discount")}</span>
+      <span aria-hidden>−</span>
+      <Input
+        value={row.discount}
+        inputMode="decimal"
+        aria-label={t("receipt.discountFor", { name: row.name })}
+        aria-invalid={discount === null}
+        onChange={(e) => onChange({ discount: e.target.value })}
+        className="tabular h-8 w-20 text-right"
+      />
+      {price !== null && discount !== null && <span className="tabular">{t("receipt.paid", { amount: money(price - discount, locale) })}</span>}
     </div>
   );
 }
@@ -203,6 +267,14 @@ export function ReceiptEditor({ id }: { id: number }) {
                 <Input id="date" type="date" value={draft.purchased_on} onChange={(e) => update({ purchased_on: e.target.value })} />
               </div>
               <div className="space-y-1.5">
+                <Label htmlFor="time">{t("receipt.time")}</Label>
+                <Input id="time" type="time" value={draft.purchased_at} onChange={(e) => update({ purchased_at: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="receipt-number">{t("receipt.number")}</Label>
+                <Input id="receipt-number" value={draft.receipt_number} maxLength={32} onChange={(e) => update({ receipt_number: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="total">{t("receipt.total")}</Label>
                 <Input
                   id="total"
@@ -213,6 +285,11 @@ export function ReceiptEditor({ id }: { id: number }) {
                   className="tabular text-right font-semibold"
                 />
               </div>
+              {r.tse_transaction && (
+                <p className="self-end pb-2 text-xs break-all text-muted-foreground" data-testid="tse">
+                  {t("receipt.tse", { number: r.tse_transaction })}
+                </p>
+              )}
             </Tile>
           </ViewTransition>
 
@@ -247,6 +324,7 @@ export function ReceiptEditor({ id }: { id: number }) {
                   >
                     <X />
                   </Button>
+                  {row.discounted && <DiscountLine row={row} onChange={(changes) => updateRow(row.key, changes)} />}
                 </li>
               ))}
             </ul>
@@ -256,7 +334,10 @@ export function ReceiptEditor({ id }: { id: number }) {
               className="self-start"
               onClick={() =>
                 update({
-                  rows: [...draft.rows, { key: `r${nextKey++}`, id: null, name: "", quantity: "1", amount: "", category_id: null, unit_price_cents: null }],
+                  rows: [
+                    ...draft.rows,
+                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null },
+                  ],
                 })
               }
             >

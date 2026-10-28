@@ -4,7 +4,7 @@ adds the bearer token from its httpOnly session cookie."""
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, time
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -168,7 +168,10 @@ class ItemIn(BaseModel):
     name: str = Field(min_length=1, max_length=256)
     quantity: float = 1.0
     unit_price_cents: int | None = None
+    # paid: the printed price minus the discount
     total_cents: int
+    discount_cents: int = Field(default=0, ge=0)
+    discount_label: str = Field(default="", max_length=64)
     category_id: int | None = None
 
 
@@ -179,6 +182,9 @@ class ItemOut(ItemIn):
 class ReceiptPatch(BaseModel):
     store_name: str | None = None
     purchased_on: date | None = None
+    purchased_at: time | None = None
+    receipt_number: str | None = Field(default=None, max_length=32)
+    tse_transaction: str | None = Field(default=None, max_length=64)
     total_cents: int | None = None
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     payment_method: str | None = None
@@ -191,6 +197,10 @@ class ReceiptOut(BaseModel):
     source: str
     store_name: str
     purchased_on: date | None
+    purchased_at: time | None = None
+    receipt_number: str = ""
+    tse_transaction: str = ""
+    tse_serial: str = ""
     total_cents: int
     currency: str
     payment_method: str
@@ -202,6 +212,8 @@ class ReceiptOut(BaseModel):
     item_sum_cents: int
     duplicates: list[int] = []
     file_deleted: bool = False
+    # an upload of a receipt the household has already: this is the existing one
+    already_present: bool = False
 
 
 class RecurringIn(BaseModel):
@@ -232,6 +244,8 @@ def receipt_out(receipt: Receipt, session: Session | None = None) -> ReceiptOut:
             quantity=i.quantity,
             unit_price_cents=i.unit_price_cents,
             total_cents=i.total_cents,
+            discount_cents=i.discount_cents,
+            discount_label=i.discount_label,
             category_id=i.category_id,
         )
         for i in receipt.items
@@ -242,6 +256,10 @@ def receipt_out(receipt: Receipt, session: Session | None = None) -> ReceiptOut:
         source=receipt.source,
         store_name=receipt.store.name if receipt.store else "",
         purchased_on=receipt.purchased_on,
+        purchased_at=receipt.purchased_at,
+        receipt_number=receipt.receipt_number,
+        tse_transaction=receipt.tse_transaction,
+        tse_serial=receipt.tse_serial,
         total_cents=receipt.total_cents,
         currency=receipt.currency,
         payment_method=receipt.payment_method,
@@ -579,7 +597,9 @@ async def upload_receipts(
     user: User = Depends(current_user),
     session: Session = Depends(get_session),
 ):
-    """One or more photos/PDFs; every file becomes a draft receipt."""
+    """One or more photos/PDFs; every file becomes a draft receipt, except a
+    receipt the household has already (same store and TSE transaction): that
+    one comes back with already_present."""
     created = []
     for upload in files:
         data = await upload.read(config.MAX_UPLOAD_BYTES + 1)
@@ -588,8 +608,10 @@ async def upload_receipts(
         media_type = sniff(data)
         if media_type is None:
             raise HTTPException(status_code=415, detail=f"Unsupported file type: {upload.filename}")
-        receipt = receipts.ingest(session, get_extractor(), user.id, data, media_type, upload.filename or "")
-        created.append(receipt_out(get_receipt(session, receipt.id), session))
+        receipt, present = receipts.ingest(session, get_extractor(), user.id, data, media_type, upload.filename or "")
+        out = receipt_out(get_receipt(session, receipt.id), session)
+        out.already_present = present
+        created.append(out)
     return created
 
 

@@ -9,7 +9,10 @@ lifestyle) and fixed costs (electricity, gas, water, rent, subscriptions).
 - **Capture without typing:** phone camera (installable PWA), photos and PDFs,
   several at once. Long receipts are split into tiles so nothing gets lost.
 - **Review:** every receipt starts as a draft; check, correct and confirm.
-  Probable duplicates are flagged.
+  A discount printed under an article ("Preisvorteil") stays with that
+  article. Time, receipt number and TSE transaction are kept when printed; a
+  receipt with the same TSE transaction is not added twice, other probable
+  duplicates are flagged.
 - **Fixed costs:** monthly instalments and yearly bills are spread evenly over
   their period, so averages stay honest.
 - **Utilities:** meters for electricity, gas and water; photograph the meter and

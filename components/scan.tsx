@@ -37,7 +37,13 @@ export function ScanProvider({ children }: { children: ReactNode }) {
       try {
         const created = await api.upload(files);
         haptic([10, 40, 10]);
-        toast.success(t("receipts.read", { count: created.length }), { id: pending });
+        // a receipt recorded before comes back as the existing one, not anew
+        const present = created.filter((r) => r.already_present).length;
+        if (present === created.length) toast.info(t("receipts.alreadyPresent", { count: present }), { id: pending });
+        else {
+          toast.success(t("receipts.read", { count: created.length - present }), { id: pending });
+          if (present) toast.info(t("receipts.alreadyPresent", { count: present }));
+        }
         setVersion((v) => v + 1);
         // a single receipt goes straight to its review
         if (created.length === 1) router.push(`/receipts/${created[0].id}`);

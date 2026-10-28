@@ -100,6 +100,16 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   photos are cut into tiles (the API downsizes to ~1568 px). Model
   `HAUSHALT_RECEIPT_MODEL` (default `claude-opus-5-5`, server-side fallback on).
 - Categories: learned rule (normalized item text) → model suggestion → store default.
+- Receipt details (Jochen, 2026-10-28; migration `0004`): a discount printed
+  under an article ("Preisvorteil") is part of that item (`discount_cents`,
+  `discount_label`; `total_cents` = printed price - discount, what counts);
+  whole-receipt discounts and deposit stay own items. Time, receipt number
+  and TSE transaction/serial are read when printed, else empty. Same store +
+  same TSE transaction = the same purchase: the upload returns the existing
+  receipt with `already_present` instead of a new one
+  (`receipts.same_purchase`); without TSE it stays a warning (`duplicates`),
+  which a different time or TSE number lifts. The fake reader takes a TSE
+  number from `fake-tse:<n>` bytes after the image (tests).
 - Tags (Jochen, 2026-10-23; `tags_api.py`): for whom/what for, next to the one
   category, only on bank bookings (status `counted`) and recurring costs.
   Tag sums overlap (no shares). Learned per bank counterparty like the
