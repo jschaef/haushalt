@@ -1,6 +1,8 @@
 // Browser-side client for haushalt-api (backend/). Same-origin calls to
 // /api/v1/*; app/api/v1/[...path]/route.ts adds the bearer token.
 
+import { reportQuery, type ReportFilter, type ReportGroup, type ReportSource } from "@/lib/report";
+
 export type Category = {
   id: number;
   key: string;
@@ -324,6 +326,45 @@ export type PurchaseFilter = {
   q: string;
 };
 
+// one entry of the report: a receipt line, a bank booking or one month of a
+// fixed cost; spending is positive (a refund negative), income its own flow
+export type ReportEntry = {
+  source: ReportSource;
+  date: string;
+  // fixed costs: the end of the month slice
+  until: string | null;
+  cents: number;
+  flow: "spending" | "income";
+  text: string;
+  detail: string;
+  category_id: number | null;
+  tag_ids: number[];
+  store_id: number | null;
+  account_id: number | null;
+  one_off: boolean;
+  receipt_id: number | null;
+  transaction_id: number | null;
+  recurring_id: number | null;
+  // the part of a receipt its lines do not explain
+  rest: boolean;
+};
+
+// key: "2026-10" (month), an id (category, tag, account), a name (store) or a source; null = none
+export type ReportGroupRow = { key: string | number | null; spending_cents: number; income_cents: number; count: number };
+
+export type Report = {
+  start: string;
+  end: string;
+  spending_cents: number;
+  income_cents: number;
+  balance_cents: number;
+  count: number;
+  groups: ReportGroupRow[];
+  // the newest 500; the CSV export holds all
+  entries: ReportEntry[];
+  truncated: boolean;
+};
+
 export type ProductLine = {
   receipt_id: number;
   purchased_on: string;
@@ -474,6 +515,8 @@ export const api = {
     if (filter.store_id !== null) params.set("store_id", String(filter.store_id));
     return request<ProductLine[]>(`purchases/lines?${params}`);
   },
+  report: (filter: ReportFilter, group: ReportGroup) => request<Report>(`report?${reportQuery(filter, group)}`),
+  reportCsvUrl: (filter: ReportFilter) => `/api/v1/report/csv?${reportQuery(filter)}`,
   // admins only; null lifts the reset date
   saveResetDate: (since: string | null) => request<{ since: string | null }>("stats/since", json("PUT", { since })),
   meters: () => request<Meter[]>("meters"),

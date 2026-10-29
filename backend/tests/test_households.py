@@ -140,6 +140,12 @@ def test_lists_and_statistics_hold_only_the_own_household(client, auth, other, m
     assert set(cats(client, other).values()).isdisjoint(cats(client, auth).values())
     assert len(client.get("/api/v1/bank/merchants", headers=other).json()) > 0
     assert client.get("/api/v1/stats/summary?range=30d", headers=other).json()["total_cents"] == 0
+    # the report and its export, also when asked for ids of household 1
+    assert client.get("/api/v1/report?range=all", headers=auth).json()["count"] > 0
+    assert client.get("/api/v1/report?range=all", headers=other).json()["count"] == 0
+    store_ids = [s["id"] for s in client.get("/api/v1/stores", headers=auth).json()]
+    assert client.get("/api/v1/report", headers=other, params={"range": "all", "store_id": store_ids}).json()["count"] == 0
+    assert len(client.get("/api/v1/report/csv?range=all", headers=other).text.splitlines()) == 1
 
 
 def test_names_and_bookings_are_per_household(client, auth, other):

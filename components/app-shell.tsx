@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
-import { Camera, Eye, Gauge, Landmark, LayoutGrid, LogOut, Moon, Receipt, Repeat, Search, Settings, ShoppingBasket, Sun } from "lucide-react";
+import { Camera, Eye, Gauge, Landmark, LayoutGrid, ListFilter, LogOut, Moon, Receipt, Repeat, Search, Settings, ShoppingBasket, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CommandPalette } from "@/components/command-palette";
 import { ScanProvider, useScan } from "@/components/scan";
@@ -22,12 +22,13 @@ const NAV: { href: string; label: MessageKey; icon: typeof LayoutGrid }[] = [
   { href: "/fixed", label: "nav.fixed", icon: Repeat },
   { href: "/utilities", label: "nav.utilities", icon: Gauge },
   { href: "/bank", label: "nav.bank", icon: Landmark },
+  { href: "/report", label: "nav.report", icon: ListFilter },
   { href: "/settings", label: "nav.settings", icon: Settings },
 ];
 
-// phone tab bar: two links, the camera, two links; fixed costs, the bank and
-// the purchases are reached from other pages and the command palette
-const TABS = NAV.filter((item) => !["/fixed", "/bank", "/purchases"].includes(item.href));
+// phone tab bar: two links, the camera, two links; fixed costs, the bank,
+// the purchases and the report are reached from other pages and the command palette
+const TABS = NAV.filter((item) => !["/fixed", "/bank", "/purchases", "/report"].includes(item.href));
 
 async function logout() {
   await fetch("/api/auth/logout", { method: "POST" });

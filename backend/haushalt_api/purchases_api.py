@@ -26,7 +26,8 @@ def product_key(name: str) -> str:
     return normalize(name) or name.strip().lower()
 
 
-def _period(session: Session, range_key: str, start: date | None, end: date | None) -> stats.Period:
+def requested_period(session: Session, range_key: str, start: date | None, end: date | None) -> stats.Period:
+    """range as on the dashboard; "custom" needs a start (end: today)."""
     if range_key != "custom":
         return stats.resolve_period(session, range_key)
     if start is None:
@@ -70,7 +71,7 @@ def purchases(
 ):
     """Sums for food and non-food (the food filter leaves them out, so both
     stay visible) and the products, biggest spending first."""
-    period = _period(session, range, start, end)
+    period = requested_period(session, range, start, end)
     is_food = {c.id: c.is_food for c in session.scalars(select(Category))}
     sums = {"food": 0, "nonfood": 0}
     products: dict[str, dict] = {}
@@ -126,7 +127,7 @@ def product_lines(
     session: Session = Depends(get_session),
 ):
     """Every purchase of one product in the period, newest first."""
-    period = _period(session, range, start, end)
+    period = requested_period(session, range, start, end)
     rows = [(i, r) for i, r in _lines(session, period, store_id, None, "") if product_key(i.name) == key]
     rows.sort(key=lambda row: (row[1].purchased_on, row[1].id), reverse=True)
     return [
