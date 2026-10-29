@@ -119,6 +119,19 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   price per unit, stores; filters period/food/store/category/search; the
   food filter leaves the food/non-food sums alone. Phones reach the page
   from the receipts page and the palette (four tabs only).
+- Report (Jochen, 2026-10-29; `report_api.py`, page `/report`
+  "Auswertung"): receipt lines, bank bookings and fixed costs as one list
+  of entries, counted like the dashboard (confirmed receipts plus their
+  unexplained rest, counted bookings, recurring costs spread - one entry
+  per cost and month; one-offs only on request; review bookings nowhere).
+  Filters (Jochen: "UND/ODER/NICHT reicht", no nesting): AND between
+  fields, OR among several values of a field (`category_id=1&category_id=2`),
+  NOT per field (`category_not=true`); text matches text and purpose/store,
+  amounts compare without sign. Sums, groups (month, category, tag -
+  overlapping, store/payee, source, account), the newest 500 entries;
+  `GET /report/csv` exports all (semicolon and decimal comma for German,
+  formula cells defused). The gateway takes no dots in path segments, so
+  no `.csv` in a route. Phones reach the page from the dashboard.
 - Tags (Jochen, 2026-10-23; `tags_api.py`): for whom/what for, next to the one
   category, only on bank bookings (status `counted`) and recurring costs.
   Tag sums overlap (no shares). Learned per bank counterparty like the

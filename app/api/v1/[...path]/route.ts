@@ -9,7 +9,7 @@ import { SESSION_COOKIE, apiUrl } from "@/lib/session";
 
 const PUBLIC = new Set(["health", "setup"]);
 const FORWARDED_REQUEST_HEADERS = ["content-type", "accept", "if-none-match"];
-const FORWARDED_RESPONSE_HEADERS = ["content-type", "cache-control", "etag", "content-length"];
+const FORWARDED_RESPONSE_HEADERS = ["content-type", "cache-control", "etag", "content-length", "content-disposition"];
 
 const SAFE_SEGMENT = /^[A-Za-z0-9_-]+$/;
 // Meter devices push readings with their own device token instead of a

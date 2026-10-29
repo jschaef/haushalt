@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from . import banking, banking_api, config, operator_api, purchases_api, receipts, smartmeter, smartmeter_api, stats, tags_api, tenancy, tokens_api, utilities_api
+from . import banking, banking_api, config, operator_api, purchases_api, receipts, report_api, smartmeter, smartmeter_api, stats, tags_api, tenancy, tokens_api, utilities_api
 from .auth import (
     TokenClaims,
     admin_user,
@@ -90,6 +90,7 @@ app.include_router(tags_api.router)
 app.include_router(operator_api.router)
 app.include_router(tokens_api.router)
 app.include_router(purchases_api.router)
+app.include_router(report_api.router)
 PREFIX = "/api/v1"
 LOCALES = ("de", "en")
 

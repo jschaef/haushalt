@@ -143,6 +143,10 @@ export function Dashboard() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("nav.dashboard")}</h1>
+          {/* phones: the report is not in the tab bar */}
+          <Link href="/report" className="text-sm text-primary underline-offset-4 hover:underline" data-testid="report-link">
+            {t("nav.report")} →
+          </Link>
           {s && (
             <p className="text-sm text-muted-foreground">
               {shortDate(s.start, locale)} – {shortDate(s.end, locale)} · {s.days} {t("dash.days")}
