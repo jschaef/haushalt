@@ -428,7 +428,8 @@ export function Report() {
           <span className="block font-medium break-words">{entry.rest ? t("report.rest") : entry.text || t("report.none")}</span>
           <span className="block text-xs break-words text-muted-foreground">
             {[
-              shortDate(entry.date, locale) + (entry.until && entry.until !== entry.date ? ` – ${shortDate(entry.until, locale)}` : ""),
+              shortDate(entry.date, locale) +
+                (entry.until && entry.until !== entry.date ? ` ${t("report.until", { date: shortDate(entry.until, locale) })}` : ""),
               t(`report.source.${entry.source}`),
               c ? nameOf(c) : "",
               entry.detail,
