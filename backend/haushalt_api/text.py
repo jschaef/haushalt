@@ -19,6 +19,20 @@ def normalize(text: str) -> str:
     return " ".join(value.split())
 
 
+_NUMBER = re.compile(r"(\d)[.,](\d)")
+_DIGIT_LETTER = re.compile(r"(?<=\d)(?=[a-z])|(?<=[a-z])(?=\d)")
+
+
+def article_key(text: str) -> str:
+    """Like normalize, but the pack size stays: 'JA! Milch 1,5L' -> 'ja milch 1.5 l',
+    so another pack size is another article (price comparisons)."""
+    value = unicodedata.normalize("NFKC", text).lower().translate(_UMLAUTS)
+    value = _NUMBER.sub(r"\1.\2", value)
+    value = _DIGIT_LETTER.sub(" ", value)
+    value = re.sub(r"[^a-z0-9.]+", " ", value)
+    return " ".join(part.strip(".") for part in value.split() if part.strip("."))
+
+
 _STORE_SUFFIX = re.compile(r"\b(gmbh|ohg|kg|ag|co|markt|filiale|se|e k|ek)\b")
 
 

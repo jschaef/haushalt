@@ -365,6 +365,36 @@ export type Report = {
   truncated: boolean;
 };
 
+// the latest price change of one article (text with pack size) in one store;
+// prices per piece, kg or l before the article's discount
+export type PriceChange = {
+  key: string;
+  name: string;
+  store_id: number;
+  store_name: string;
+  unit: Unit;
+  category_id: number | null;
+  is_food: boolean;
+  old_cents: number;
+  new_cents: number;
+  diff_cents: number;
+  pct: number;
+  previous_on: string;
+  changed_on: string;
+  current_cents: number;
+  last_bought: string;
+  // newest first
+  history: { date: string; unit_cents: number; discount_cents: number; quantity: number; receipt_id: number }[];
+};
+
+export type PriceFilter = {
+  food: "all" | "food" | "nonfood";
+  store_id: number | null;
+  direction: "all" | "up" | "down";
+  min_pct: number;
+  q: string;
+};
+
 export type ProductLine = {
   receipt_id: number;
   purchased_on: string;
@@ -508,6 +538,15 @@ export const api = {
     if (filter.category_id !== null) params.set("category_id", String(filter.category_id));
     if (filter.q.trim()) params.set("q", filter.q.trim());
     return request<Purchases>(`purchases?${params}`);
+  },
+  priceChanges: (range: Range, custom: CustomRange, filter: PriceFilter) => {
+    const params = periodQuery(range, custom);
+    if (filter.food !== "all") params.set("food", filter.food);
+    if (filter.store_id !== null) params.set("store_id", String(filter.store_id));
+    if (filter.direction !== "all") params.set("direction", filter.direction);
+    if (filter.min_pct > 0) params.set("min_pct", String(filter.min_pct));
+    if (filter.q.trim()) params.set("q", filter.q.trim());
+    return request<{ start: string; end: string; changes: PriceChange[] }>(`purchases/prices?${params}`);
   },
   productLines: (key: string, filter: PurchaseFilter) => {
     const params = periodQuery(filter.range, filter.custom);

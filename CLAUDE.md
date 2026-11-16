@@ -119,6 +119,15 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   price per unit, stores; filters period/food/store/category/search; the
   food filter leaves the food/non-food sums alone. Phones reach the page
   from the receipts page and the palette (four tabs only).
+- Price changes (Jochen, 2026-11-16; `GET /purchases/prices`, tab
+  "Preisänderungen" on `/purchases`): the same article - `text.article_key`,
+  the text WITH pack size ("Milch 1L" is not "Milch 0,5L") - in the same
+  store against its previous purchase (which may lie before the period).
+  Price per piece/kg/l before the article's discount (a promotion is no
+  price drop): the printed unit price, else (paid + discount) / quantity;
+  computed prices of weighed goods tolerate the rounding of the printed
+  total. Per article and store the latest change in the period, biggest
+  percentage first, with the price history.
 - Report (Jochen, 2026-10-29; `report_api.py`, page `/report`
   "Auswertung"): receipt lines, bank bookings and fixed costs as one list
   of entries, counted like the dashboard (confirmed receipts plus their

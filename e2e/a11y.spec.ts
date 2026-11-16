@@ -216,3 +216,54 @@ test("amounts fit their tiles on a 360 px phone in the low-vision modes", async 
     await fetch(`/api/v1/recurring/${big.id}`, { method: "DELETE" });
   });
 });
+
+test("price changes tab: no serious violations in any theme, no sideways scrolling at 320 px", async ({ page, baseURL }) => {
+  // a tab, so the PAGES loop above only sees the products; long names on purpose
+  await login(page);
+  const long = `Preisvergleich-Artikel mit einem sehr langen Namen ${Date.now()} 1L`;
+  for (const [cents, daysAgo] of [
+    [100, 9],
+    [135, 3],
+  ]) {
+    await page.evaluate(
+      async ({ long, cents, daysAgo }) => {
+        const form = new FormData();
+        form.append("files", new Blob([Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgAAIAAAUAAU6iT10AAAAASUVORK5CYII="), (c) => c.charCodeAt(0)), new TextEncoder().encode(`${cents}`)], { type: "image/png" }), "bon.png");
+        const [receipt] = await (await fetch("/api/v1/receipts", { method: "POST", body: form })).json();
+        const day = new Date(Date.now() - daysAgo * 864e5).toISOString().slice(0, 10);
+        await fetch(`/api/v1/receipts/${receipt.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            store_name: "Supermarkt mit einem ebenfalls ziemlich langen Namen",
+            purchased_on: day,
+            total_cents: cents,
+            items: [{ name: long, quantity: 1, unit: "piece", total_cents: cents, discount_cents: 20, category_id: receipt.items[0].category_id }],
+          }),
+        });
+        await fetch(`/api/v1/receipts/${receipt.id}/confirm`, { method: "POST" });
+      },
+      { long, cents, daysAgo },
+    );
+  }
+  const openTab = async () => {
+    await page.goto("/purchases");
+    await page.getByRole("tab", { name: "Preisänderungen" }).click();
+    await page.getByLabel("Produkt suchen").fill(long);
+    const row = page.getByTestId("price-row").first();
+    await row.getByRole("button").click();
+    await expect(row.getByTestId("price-history")).toBeVisible();
+    await page.waitForTimeout(800);
+  };
+  const found: string[] = [];
+  for (const theme of ["contrast", "contrast-light", "dark", "light"]) {
+    await setTheme(page, theme);
+    await openTab();
+    for (const violation of await violations(page)) found.push(`${theme} ${violation}`);
+  }
+  expect(found).toEqual([]);
+  await page.setViewportSize({ width: 320, height: 640 });
+  await openTab();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, "price tab scrolls sideways at 320 px").toBeLessThanOrEqual(0);
+});
