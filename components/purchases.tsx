@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ChevronDown, ExternalLink, Search } from "lucide-react";
 import { Tile } from "@/components/bento";
 import { CustomRangeFields, RangePicker } from "@/components/dashboard";
+import { PriceChanges } from "@/components/price-changes";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -117,6 +118,7 @@ export function Purchases() {
   });
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>("total");
+  const [tab, setTab] = useState<"products" | "prices">("products");
   const stores = useData(() => api.stores(), "stores");
   const categoryList = useData(() => api.categories(), "categories");
 
@@ -144,114 +146,144 @@ export function Purchases() {
       </div>
       {filter.range === "custom" && <CustomRangeFields value={filter.custom} onChange={(custom) => update({ custom })} />}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="glass flex w-fit max-w-full gap-1 overflow-x-auto rounded-xl p-1" role="tablist" aria-label={t("purchases.tabs")}>
         {(
           [
-            ["purchases.food", p?.food_cents],
-            ["purchases.nonfood", p?.nonfood_cents],
-            ["purchases.total", p?.total_cents],
+            ["products", "purchases.tabProducts"],
+            ["prices", "purchases.tabPrices"],
           ] as const
-        ).map(([label, cents], index) => (
-          <Tile key={label} index={index} title={t(label)} testId={`purchases-${label.split(".")[1]}`}>
-            {cents === undefined ? <Skeleton className="h-8 w-28" /> : <p className="tabular text-2xl font-semibold">{money(cents, locale)}</p>}
-          </Tile>
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            id={`purchases-tab-${value}`}
+            aria-selected={tab === value}
+            aria-controls="purchases-panel"
+            onClick={() => setTab(value)}
+            className={cn("rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground", tab === value && "bg-primary text-primary-foreground")}
+          >
+            {t(label)}
+          </button>
         ))}
       </div>
 
-      <div className="glass grid grid-cols-1 gap-3 rounded-2xl p-3 sm:grid-cols-2 lg:grid-cols-5" data-testid="purchases-filters">
-        <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-1">
-          <Label htmlFor="purchase-search" className="text-xs">
-            {t("purchases.search")}
-          </Label>
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input id="purchase-search" type="search" value={search} maxLength={100} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
-          </div>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <Label htmlFor="purchase-kind" className="text-xs">
-            {t("purchases.kind")}
-          </Label>
-          <select
-            id="purchase-kind"
-            value={filter.food}
-            onChange={(e) => update({ food: e.target.value as PurchaseFilter["food"] })}
-            className={SELECT_CLASS}
-          >
-            <option value="all">{t("purchases.all")}</option>
-            <option value="food">{t("purchases.food")}</option>
-            <option value="nonfood">{t("purchases.nonfood")}</option>
-          </select>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <Label htmlFor="purchase-store" className="text-xs">
-            {t("purchases.store")}
-          </Label>
-          <select
-            id="purchase-store"
-            value={filter.store_id ?? ""}
-            onChange={(e) => update({ store_id: e.target.value ? Number(e.target.value) : null })}
-            className={SELECT_CLASS}
-          >
-            <option value="">{t("purchases.allStores")}</option>
-            {byName(stores.data ?? [], (s) => s.name, locale).map((store) => (
-              <option key={store.id} value={store.id}>
-                {store.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <Label htmlFor="purchase-category" className="text-xs">
-            {t("purchases.category")}
-          </Label>
-          <select
-            id="purchase-category"
-            value={filter.category_id ?? ""}
-            onChange={(e) => update({ category_id: e.target.value ? Number(e.target.value) : null })}
-            className={SELECT_CLASS}
-          >
-            <option value="">{t("purchases.allCategories")}</option>
-            {byName(spendingCategories(categories), (c) => (locale === "de" ? c.name_de : c.name_en), locale).map((c) => (
-              <option key={c.id} value={c.id}>
-                {locale === "de" ? c.name_de : c.name_en}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="min-w-0 space-y-1">
-          <Label htmlFor="purchase-sort" className="text-xs">
-            {t("purchases.sort")}
-          </Label>
-          <select id="purchase-sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={SELECT_CLASS}>
-            {SORTS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {t(option.label)}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {!ready ? (
-        <p className="glass rounded-2xl p-6 text-center text-muted-foreground">{t("range.incomplete")}</p>
-      ) : data.error ? (
-        <p className="glass rounded-2xl p-6 text-destructive">{data.error.message}</p>
-      ) : !p ? (
-        <Skeleton className="h-48 rounded-2xl" />
-      ) : (
-        <Tile index={3} title={t("purchases.count", { count: p.products.length })} testId="products">
-          {p.products.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("purchases.empty")}</p>
-          ) : (
-            <ul className="space-y-1.5">
-              {sorted(p.products, sort, locale).map((product) => (
-                <ProductRow key={product.key} product={product} color={colorOf(product.category_id)} filter={filter} />
+      <div id="purchases-panel" role="tabpanel" aria-labelledby={`purchases-tab-${tab}`} className="space-y-4">
+        {tab === "prices" ? (
+          <PriceChanges range={filter.range} custom={filter.custom} ready={ready} stores={stores.data ?? []} categories={categories} />
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {(
+                [
+                  ["purchases.food", p?.food_cents],
+                  ["purchases.nonfood", p?.nonfood_cents],
+                  ["purchases.total", p?.total_cents],
+                ] as const
+              ).map(([label, cents], index) => (
+                <Tile key={label} index={index} title={t(label)} testId={`purchases-${label.split(".")[1]}`}>
+                  {cents === undefined ? <Skeleton className="h-8 w-28" /> : <p className="tabular text-2xl font-semibold">{money(cents, locale)}</p>}
+                </Tile>
               ))}
-            </ul>
-          )}
-        </Tile>
-      )}
+            </div>
+
+            <div className="glass grid grid-cols-1 gap-3 rounded-2xl p-3 sm:grid-cols-2 lg:grid-cols-5" data-testid="purchases-filters">
+              <div className="min-w-0 space-y-1 sm:col-span-2 lg:col-span-1">
+                <Label htmlFor="purchase-search" className="text-xs">
+                  {t("purchases.search")}
+                </Label>
+                <div className="relative">
+                  <Search className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                  <Input id="purchase-search" type="search" value={search} maxLength={100} onChange={(e) => setSearch(e.target.value)} className="pl-8" />
+                </div>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor="purchase-kind" className="text-xs">
+                  {t("purchases.kind")}
+                </Label>
+                <select
+                  id="purchase-kind"
+                  value={filter.food}
+                  onChange={(e) => update({ food: e.target.value as PurchaseFilter["food"] })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="all">{t("purchases.all")}</option>
+                  <option value="food">{t("purchases.food")}</option>
+                  <option value="nonfood">{t("purchases.nonfood")}</option>
+                </select>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor="purchase-store" className="text-xs">
+                  {t("purchases.store")}
+                </Label>
+                <select
+                  id="purchase-store"
+                  value={filter.store_id ?? ""}
+                  onChange={(e) => update({ store_id: e.target.value ? Number(e.target.value) : null })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">{t("purchases.allStores")}</option>
+                  {byName(stores.data ?? [], (s) => s.name, locale).map((store) => (
+                    <option key={store.id} value={store.id}>
+                      {store.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor="purchase-category" className="text-xs">
+                  {t("purchases.category")}
+                </Label>
+                <select
+                  id="purchase-category"
+                  value={filter.category_id ?? ""}
+                  onChange={(e) => update({ category_id: e.target.value ? Number(e.target.value) : null })}
+                  className={SELECT_CLASS}
+                >
+                  <option value="">{t("purchases.allCategories")}</option>
+                  {byName(spendingCategories(categories), (c) => (locale === "de" ? c.name_de : c.name_en), locale).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {locale === "de" ? c.name_de : c.name_en}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-0 space-y-1">
+                <Label htmlFor="purchase-sort" className="text-xs">
+                  {t("purchases.sort")}
+                </Label>
+                <select id="purchase-sort" value={sort} onChange={(e) => setSort(e.target.value as Sort)} className={SELECT_CLASS}>
+                  {SORTS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {t(option.label)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {!ready ? (
+              <p className="glass rounded-2xl p-6 text-center text-muted-foreground">{t("range.incomplete")}</p>
+            ) : data.error ? (
+              <p className="glass rounded-2xl p-6 text-destructive">{data.error.message}</p>
+            ) : !p ? (
+              <Skeleton className="h-48 rounded-2xl" />
+            ) : (
+              <Tile index={3} title={t("purchases.count", { count: p.products.length })} testId="products">
+                {p.products.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{t("purchases.empty")}</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {sorted(p.products, sort, locale).map((product) => (
+                      <ProductRow key={product.key} product={product} color={colorOf(product.category_id)} filter={filter} />
+                    ))}
+                  </ul>
+                )}
+              </Tile>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
