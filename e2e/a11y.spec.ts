@@ -217,7 +217,7 @@ test("amounts fit their tiles on a 360 px phone in the low-vision modes", async 
   });
 });
 
-test("price changes tab: no serious violations in any theme, no sideways scrolling at 320 px", async ({ page, baseURL }) => {
+test("price changes tab: no serious violations in any theme, no sideways scrolling at 320 px", async ({ page }) => {
   // a tab, so the PAGES loop above only sees the products; long names on purpose
   await login(page);
   const long = `Preisvergleich-Artikel mit einem sehr langen Namen ${Date.now()} 1L`;
@@ -266,4 +266,52 @@ test("price changes tab: no serious violations in any theme, no sideways scrolli
   await openTab();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow, "price tab scrolls sideways at 320 px").toBeLessThanOrEqual(0);
+});
+
+test("store comparison tab: no serious violations in any theme, no sideways scrolling at 320 px", async ({ page }) => {
+  await login(page);
+  const long = `Vergleichsprodukt mit einem sehr langen Namen ${Date.now()} 1 l`;
+  for (const [store, cents] of [
+    ["Erster Supermarkt mit einem ziemlich langen Namen", 129],
+    ["Zweiter Supermarkt mit einem noch längeren Namen", 99],
+  ] as const) {
+    await page.evaluate(
+      async ({ long, store, cents }) => {
+        const form = new FormData();
+        const png = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgAAIAAAUAAU6iT10AAAAASUVORK5CYII="), (c) => c.charCodeAt(0));
+        form.append("files", new Blob([png, new TextEncoder().encode(store)], { type: "image/png" }), "bon.png");
+        const [receipt] = await (await fetch("/api/v1/receipts", { method: "POST", body: form })).json();
+        await fetch(`/api/v1/receipts/${receipt.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            store_name: store,
+            purchased_on: new Date().toISOString().slice(0, 10),
+            total_cents: cents,
+            items: [{ name: `${long} gedruckt`, quantity: 1, unit: "piece", total_cents: cents, category_id: receipt.items[0].category_id, compare_name: long }],
+          }),
+        });
+        await fetch(`/api/v1/receipts/${receipt.id}/confirm`, { method: "POST" });
+      },
+      { long, store, cents },
+    );
+  }
+  const openTab = async () => {
+    await page.goto("/purchases");
+    await page.getByRole("tab", { name: "Supermarktvergleich" }).click();
+    await page.getByLabel("Produkt suchen").fill(long);
+    await expect(page.getByTestId("compare-row").first()).toBeVisible();
+    await page.waitForTimeout(800);
+  };
+  const found: string[] = [];
+  for (const theme of ["contrast", "contrast-light", "dark", "light"]) {
+    await setTheme(page, theme);
+    await openTab();
+    for (const violation of await violations(page)) found.push(`${theme} ${violation}`);
+  }
+  expect(found).toEqual([]);
+  await page.setViewportSize({ width: 320, height: 640 });
+  await openTab();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, "comparison tab scrolls sideways at 320 px").toBeLessThanOrEqual(0);
 });

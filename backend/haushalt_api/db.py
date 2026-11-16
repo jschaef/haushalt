@@ -211,6 +211,9 @@ class ReceiptItem(HouseholdOwned, Base):
     discount_cents: Mapped[int] = mapped_column(Integer, default=0)
     discount_label: Mapped[str] = mapped_column(String(64), default="")
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    # generic name to compare shops ("Vollmilch 3,5 % 1 l"); "" = no product
+    # (deposit), None = not named yet (lines read before migration 0006)
+    compare_name: Mapped[str | None] = mapped_column(String(128))
 
     receipt: Mapped[Receipt] = relationship(back_populates="items")
 

@@ -105,6 +105,7 @@ def apply_extraction(session: Session, receipt: Receipt, result: ExtractedReceip
                 discount_cents=item.discount_cents,
                 discount_label=item.discount_label,
                 category_id=category_id,
+                compare_name=item.compare_name,
             )
         )
 
@@ -244,5 +245,10 @@ def update(session: Session, receipt: Receipt, changes: dict) -> None:
                     discount_cents=data.get("discount_cents") or 0,
                     discount_label=(data.get("discount_label") or "") if data.get("discount_cents") else "",
                     category_id=category_id,
+                    # None (an editor that does not know the field) keeps it
+                    compare_name=(
+                        data["compare_name"].strip()[:128] if data.get("compare_name") is not None
+                        else previous.compare_name if previous is not None else None
+                    ),
                 )
             )

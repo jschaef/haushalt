@@ -6,6 +6,7 @@ import { ChevronDown, ExternalLink, Search } from "lucide-react";
 import { Tile } from "@/components/bento";
 import { CustomRangeFields, RangePicker } from "@/components/dashboard";
 import { PriceChanges } from "@/components/price-changes";
+import { StoreComparison } from "@/components/store-comparison";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -118,7 +119,7 @@ export function Purchases() {
   });
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<Sort>("total");
-  const [tab, setTab] = useState<"products" | "prices">("products");
+  const [tab, setTab] = useState<"products" | "prices" | "compare">("products");
   const stores = useData(() => api.stores(), "stores");
   const categoryList = useData(() => api.categories(), "categories");
 
@@ -151,6 +152,7 @@ export function Purchases() {
           [
             ["products", "purchases.tabProducts"],
             ["prices", "purchases.tabPrices"],
+            ["compare", "purchases.tabCompare"],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -171,6 +173,8 @@ export function Purchases() {
       <div id="purchases-panel" role="tabpanel" aria-labelledby={`purchases-tab-${tab}`} className="space-y-4">
         {tab === "prices" ? (
           <PriceChanges range={filter.range} custom={filter.custom} ready={ready} stores={stores.data ?? []} categories={categories} />
+        ) : tab === "compare" ? (
+          <StoreComparison range={filter.range} custom={filter.custom} ready={ready} categories={categories} />
         ) : (
           <>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
