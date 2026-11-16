@@ -88,6 +88,13 @@ def test_filters(client, auth, png):
     assert names(prices(client, auth, min_pct=10)) == {"Butter", "Zahnpasta"}
     assert names(prices(client, auth, food="nonfood")) == {"Zahnpasta"}
     assert names(prices(client, auth, food="food", q="kaffe")) == {"Kaffee"}
+    buy(client, auth, png, "REWE", d(20), {"name": "Milch 1L", "total_cents": 99})
+    buy(client, auth, png, "REWE", d(2), {"name": "Milch 1L", "total_cents": 109})
+    buy(client, auth, png, "REWE", d(20), {"name": "Milch 0,5L", "total_cents": 59})
+    buy(client, auth, png, "REWE", d(2), {"name": "Milch 0,5L", "total_cents": 69})
+    # the search keeps the pack size: "1L" alone must not match everything
+    assert names(prices(client, auth, q="1L")) == {"Milch 1L"}
+    assert names(prices(client, auth, q="milch 0,5 l")) == {"Milch 0,5L"}
     dm = next(s["id"] for s in client.get("/api/v1/stores", headers=auth).json() if s["name"] == "DM")
     assert names(prices(client, auth, store_id=dm)) == {"Zahnpasta"}
     # a change before the period is no change in it

@@ -193,7 +193,8 @@ def price_changes(
     )
     if store_id is not None:
         query = query.where(Receipt.store_id == store_id)
-    needle = normalize(q) if q.strip() else ""
+    # with the pack size, so a search for "1L" finds the litre packs
+    needle = article_key(q) if q.strip() else ""
     series: dict[tuple, list] = defaultdict(list)
     for item, receipt in session.execute(query).all():
         price = regular_unit_cents(item)
@@ -206,7 +207,7 @@ def price_changes(
     out = []
     for (key, sid, unit), rows in series.items():
         latest_item, latest_receipt = rows[-1][0], rows[-1][1]
-        if needle and needle not in normalize(latest_item.name):
+        if needle and needle not in key:
             continue
         food_item = is_food.get(latest_item.category_id, False)
         if food != "all" and (food == "food") != food_item:
