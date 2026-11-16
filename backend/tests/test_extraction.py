@@ -130,3 +130,21 @@ def test_claude_extractor_rejects_unknown_type():
     client, _ = fake_client("{}")
     with pytest.raises(ExtractionError):
         ClaudeExtractor(client=client).extract(b"x", "text/plain", ["other"])
+
+
+def test_items_carry_a_comparison_name():
+    raw = {"items": [{"name": "JA! Milch 1L", "total": 1.09, "compare_name": "  Vollmilch   1 l "}, {"name": "Pfand", "total": -0.25}]}
+    items = parse_result(raw).items
+    assert [i.compare_name for i in items] == ["Vollmilch 1 l", ""]
+    assert "compare_name" in receipt_schema(["groceries"])["properties"]["items"]["items"]["required"]
+    assert "Vollmilch 3,5 % 1 l" in extraction.PROMPT
+
+
+def test_claude_extractor_names_older_lines_text_only():
+    answer = json.dumps({"names": [{"index": 1, "compare_name": "Vollmilch 1 l"}, {"index": 0, "compare_name": ""}, {"index": 7, "compare_name": "x"}]})
+    client, messages = fake_client(answer)
+    names = ClaudeExtractor(client=client).name_products(["Pfand", "Milbona Milch 1L"])
+    assert names == {"Pfand": "", "Milbona Milch 1L": "Vollmilch 1 l"}
+    content = messages.calls[0]["messages"][0]["content"]
+    # no image or document: text only
+    assert [block["type"] for block in content] == ["text"] and "1: Milbona Milch 1L" in content[0]["text"]

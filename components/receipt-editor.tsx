@@ -33,6 +33,8 @@ type Row = {
   discounted: boolean;
   category_id: number | null;
   unit_price_cents: number | null;
+  // generic name for the store comparison; null: not named yet (kept)
+  compare: string | null;
 };
 
 type Draft = { store_name: string; purchased_on: string; purchased_at: string; receipt_number: string; total: string; rows: Row[] };
@@ -60,6 +62,7 @@ function toDraft(receipt: Receipt, locale: Locale): Draft {
       discounted: Boolean(item.discount_cents),
       category_id: item.category_id,
       unit_price_cents: item.unit_price_cents,
+      compare: item.compare_name ?? null,
     })),
   };
 }
@@ -83,6 +86,7 @@ function toPatch(draft: Draft) {
       discount_label: discount ? row.discount_label : "",
       category_id: row.category_id,
       unit_price_cents: row.unit_price_cents,
+      ...(row.compare !== null && { compare_name: row.compare.trim() }),
     });
   }
   if (total === null) return null;
@@ -341,6 +345,17 @@ export function ReceiptEditor({ id }: { id: number }) {
                     <X />
                   </Button>
                   {row.discounted && <DiscountLine row={row} onChange={(changes) => updateRow(row.key, changes)} />}
+                  <label className="col-span-full flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+                    <span className="shrink-0">{t("receipt.compareName")}</span>
+                    <Input
+                      value={row.compare ?? ""}
+                      maxLength={128}
+                      placeholder={row.compare === null ? t("receipt.compareUnnamed") : ""}
+                      onChange={(e) => updateRow(row.key, { compare: e.target.value })}
+                      className="h-7 min-w-0 flex-1 text-xs"
+                      data-testid="compare-name"
+                    />
+                  </label>
                 </li>
               ))}
             </ul>
@@ -352,7 +367,7 @@ export function ReceiptEditor({ id }: { id: number }) {
                 update({
                   rows: [
                     ...draft.rows,
-                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", unit: "piece", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null },
+                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", unit: "piece", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null, compare: "" },
                   ],
                 })
               }

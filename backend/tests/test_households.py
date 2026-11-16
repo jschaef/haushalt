@@ -147,6 +147,9 @@ def test_lists_and_statistics_hold_only_the_own_household(client, auth, other, m
     assert client.get("/api/v1/report", headers=other, params={"range": "all", "store_id": store_ids}).json()["count"] == 0
     assert len(client.get("/api/v1/report/csv?range=all", headers=other).text.splitlines()) == 1
     assert client.get("/api/v1/purchases/prices?range=all", headers=other).json()["changes"] == []
+    assert client.get("/api/v1/purchases/compare?range=all", headers=other).json()["products"] == []
+    # naming older lines only touches the own household's lines
+    assert client.post("/api/v1/purchases/compare/names", headers=other).json() == {"named": 0, "remaining": 0}
 
 
 def test_names_and_bookings_are_per_household(client, auth, other):

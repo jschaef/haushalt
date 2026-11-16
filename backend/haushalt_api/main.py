@@ -179,6 +179,8 @@ class ItemIn(BaseModel):
     discount_cents: int = Field(default=0, ge=0)
     discount_label: str = Field(default="", max_length=64)
     category_id: int | None = None
+    # generic name to compare shops; None keeps it, "" = no product
+    compare_name: str | None = Field(default=None, max_length=128)
 
 
 class ItemOut(ItemIn):
@@ -254,6 +256,7 @@ def receipt_out(receipt: Receipt, session: Session | None = None) -> ReceiptOut:
             discount_cents=i.discount_cents,
             discount_label=i.discount_label,
             category_id=i.category_id,
+            compare_name=i.compare_name,
         )
         for i in receipt.items
     ]

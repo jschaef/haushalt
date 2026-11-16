@@ -68,6 +68,8 @@ class ExtractedItem:
     category_key: str | None = None
     discount_cents: int = 0
     discount_label: str = ""
+    # generic name to compare stores ("Vollmilch 3,5 % 1 l"), "" for deposit etc.
+    compare_name: str = ""
 
 
 @dataclass
@@ -92,6 +94,8 @@ class Extractor(Protocol):
     def read_meter(self, data: bytes, media_type: str) -> dict: ...
 
     def read_bill(self, data: bytes, media_type: str) -> dict: ...
+
+    def name_products(self, names: list[str]) -> dict[str, str]: ...
 
 
 def _cents(value) -> int | None:
@@ -130,6 +134,7 @@ def _item(item: dict) -> ExtractedItem:
         category_key=item.get("category"),
         discount_cents=discount,
         discount_label=_text(item.get("discount_label"), 64) if discount else "",
+        compare_name=_text(item.get("compare_name"), 128),
     )
 
 
@@ -191,8 +196,11 @@ def receipt_schema(category_keys: list[str]) -> dict:
                         "discount": nullable_number,
                         "discount_label": nullable_text,
                         "category": {"type": "string", "enum": category_keys},
+                        "compare_name": {"type": "string"},
                     },
-                    "required": ["name", "quantity", "unit", "unit_price", "total", "discount", "discount_label", "category"],
+                    "required": [
+                        "name", "quantity", "unit", "unit_price", "total", "discount", "discount_label", "category", "compare_name",
+                    ],
                     "additionalProperties": False,
                 },
             },
@@ -203,6 +211,18 @@ def receipt_schema(category_keys: list[str]) -> dict:
         ],
         "additionalProperties": False,
     }
+
+
+# shared by the receipt prompt and the naming of older lines (name_products)
+COMPARE_RULE = """compare_name: a generic German product name so the same product can be compared
+across shops, whatever the chain or brand: drop brand and store-brand names ("JA!",
+"Milbona", "gut&günstig", "K-Classic"), keep what makes it the same product (kind,
+fat content, variety, organic "Bio") and the pack size written as number, space, unit
+("1 l", "500 g", "6 x 1,5 l", "10 Stück"). Examples: "JA! Frische Vollmilch 3,5% 1L" ->
+"Vollmilch 3,5 % 1 l"; "Milbona Frische Milch 3,5% 1l" -> "Vollmilch 3,5 % 1 l"; "BIO
+BANANEN" (weighed) -> "Bio Bananen"; "Spuelmittel Pril 500ml" -> "Spülmittel 500 ml".
+Weighed goods have no pack size. Use an empty string for deposit, discounts, bags and
+anything that is not a product."""
 
 
 PROMPT = """Read this shopping receipt (usually German) and return its content as JSON.
@@ -232,8 +252,11 @@ PROMPT = """Read this shopping receipt (usually German) and return its content a
   subtotals, tax lines, payment lines or change.
 - total: the amount paid. The item totals minus their discounts should add up to it.
 - category: the best fitting key; deposit lines use "deposit" if that key exists.
+- compare_name: see below.
 - Amounts are plain numbers in the receipt currency (1,29 € -> 1.29).
-- If the image is not a receipt or invoice, set is_receipt to false and leave items empty."""
+- If the image is not a receipt or invoice, set is_receipt to false and leave items empty.
+
+""" + COMPARE_RULE
 
 
 def _encode_jpeg(image: Image.Image) -> str:
@@ -296,9 +319,11 @@ class ClaudeExtractor:
 
     def _ask(self, data: bytes, media_type: str, prompt: str, schema: dict, what: str) -> dict:
         """One structured-output request about one file; the parsed JSON answer."""
+        return self._request(content_blocks(data, media_type) + [{"type": "text", "text": prompt}], schema, what)
+
+    def _request(self, content: list[dict], schema: dict, what: str) -> dict:
         import anthropic
 
-        content = content_blocks(data, media_type) + [{"type": "text", "text": prompt}]
         try:
             # fallbacks="default": if a safety classifier declines, the API
             # retries on a fallback model inside the same call.
@@ -341,6 +366,46 @@ class ClaudeExtractor:
     def read_bill(self, data: bytes, media_type: str) -> dict:
         return parse_bill(self._ask(data, media_type, BILL_PROMPT, BILL_SCHEMA, "bill"))
 
+    def name_products(self, names: list[str]) -> dict[str, str]:
+        """Comparison names for article texts of older receipts, text only."""
+        listing = "\n".join(f"{index}: {name}" for index, name in enumerate(names))
+        prompt = f"{NAMES_PROMPT}\n\n{COMPARE_RULE}\n\nArticle texts:\n{listing}"
+        raw = self._request([{"type": "text", "text": prompt}], NAMES_SCHEMA, "names")
+        return parse_names(raw, names)
+
+
+NAMES_PROMPT = """These are article texts from German shopping receipts, one per line with
+its number. Give each one a comparison name by the rule below. Answer for every number."""
+
+NAMES_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "names": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"index": {"type": "integer"}, "compare_name": {"type": "string"}},
+                "required": ["index", "compare_name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["names"],
+    "additionalProperties": False,
+}
+
+
+def parse_names(raw: dict, names: list[str]) -> dict[str, str]:
+    """{article text: comparison name}; numbers the model made up are ignored."""
+    out = {}
+    for entry in raw.get("names") or []:
+        if not isinstance(entry, dict):
+            continue
+        index = entry.get("index")
+        if isinstance(index, int) and 0 <= index < len(names):
+            out[names[index]] = _text(entry.get("compare_name"), 128)
+    return out
+
 
 FAKE_RECEIPT = {
     "is_receipt": True,
@@ -354,17 +419,21 @@ FAKE_RECEIPT = {
     "total": 12.43,
     "payment_method": "card",
     "items": [
-        {"name": "JA! Frischmilch 3,5% 1L", "quantity": 2, "unit": "piece", "unit_price": 1.09, "total": 2.18, "category": "groceries"},
+        {"name": "JA! Frischmilch 3,5% 1L", "quantity": 2, "unit": "piece", "unit_price": 1.09, "total": 2.18, "category": "groceries",
+         "compare_name": "Vollmilch 3,5 % 1 l"},
         {"name": "Bio Bananen", "quantity": 1.15, "unit": "kg", "unit_price": 1.99, "total": 2.29, "discount": 0.30,
-         "discount_label": "Preisvorteil", "category": "groceries"},
-        {"name": "Mineralwasser 6x1,5L", "quantity": 1, "unit": "piece", "unit_price": None, "total": 3.54, "category": "drinks"},
-        {"name": "Pfand", "quantity": 1, "unit": "piece", "unit_price": None, "total": 1.50, "category": "deposit"},
-        {"name": "Spülmittel", "quantity": 1, "unit": "piece", "unit_price": None, "total": 3.22, "category": "household"},
+         "discount_label": "Preisvorteil", "category": "groceries", "compare_name": "Bio Bananen"},
+        {"name": "Mineralwasser 6x1,5L", "quantity": 1, "unit": "piece", "unit_price": None, "total": 3.54, "category": "drinks",
+         "compare_name": "Mineralwasser 6 x 1,5 l"},
+        {"name": "Pfand", "quantity": 1, "unit": "piece", "unit_price": None, "total": 1.50, "category": "deposit", "compare_name": ""},
+        {"name": "Spülmittel", "quantity": 1, "unit": "piece", "unit_price": None, "total": 3.22, "category": "household",
+         "compare_name": "Spülmittel"},
     ],
 }
 
 
 FAKE_TSE = b"fake-tse:"
+FAKE_BRANDS = {"ja!", "milbona", "k-classic"}
 
 
 class FakeExtractor:
@@ -380,6 +449,14 @@ class FakeExtractor:
     def read_bill(self, data: bytes, media_type: str) -> dict:
         self._check(media_type)
         return parse_bill(FAKE_BILL)
+
+    def name_products(self, names: list[str]) -> dict[str, str]:
+        """Drops the brand words tests use; "Pfand" is no product."""
+        out = {}
+        for name in names:
+            words = [w for w in name.split() if w.lower() not in FAKE_BRANDS]
+            out[name] = "" if name.lower().startswith("pfand") else " ".join(words)
+        return out
 
     def extract(self, data: bytes, media_type: str, category_keys: list[str]) -> ExtractedReceipt:
         if media_type not in IMAGE_TYPES | {PDF_TYPE}:

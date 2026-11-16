@@ -128,6 +128,17 @@ this on every push and nightly (`.github/workflows/ci.yml`).
   computed prices of weighed goods tolerate the rounding of the printed
   total. Per article and store the latest change in the period, biggest
   percentage first, with the price history.
+- Store comparison (Jochen, 2026-11-16; migration `0006`, `GET
+  /purchases/compare`, tab "Supermarktvergleich" on `/purchases`): the
+  model gives every receipt line a generic `compare_name` ("Vollmilch
+  3,5 % 1 l", brand dropped, pack size kept; "" = no product such as
+  deposit; NULL = read before 0006). Editable in the receipt editor; a
+  PATCH item without `compare_name` keeps it. Products (`article_key` of
+  the comparison name and unit) bought in two or more stores in the
+  period, per store the latest price per unit before the discount,
+  cheapest first, biggest gap first. Older lines are named on request
+  (`POST /purchases/compare/names`, one text-only model call per 200
+  article texts, the client repeats until none remain).
 - Report (Jochen, 2026-10-29; `report_api.py`, page `/report`
   "Auswertung"): receipt lines, bank bookings and fixed costs as one list
   of entries, counted like the dashboard (confirmed receipts plus their

@@ -3,7 +3,8 @@
 grouped by their normalized text (sizes left out, case ignored), quantities
 per unit, filters by period, store, category and a search text. Bank
 bookings without a receipt have no articles and do not appear here.
-/prices lists price changes of the same article in the same store."""
+/prices lists price changes of the same article in the same store, /compare
+the same product (comparison name) across stores."""
 
 from collections import defaultdict
 from datetime import date
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session, selectinload
 from . import stats
 from .auth import current_user
 from .db import Category, Receipt, ReceiptItem, get_session
+from .extraction import ExtractionError, get_extractor
 from .text import article_key, normalize
 
 router = APIRouter(prefix="/api/v1/purchases", dependencies=[Depends(current_user)])
@@ -238,3 +240,103 @@ def price_changes(
         })
     out.sort(key=lambda p: (-abs(p["pct"]), p["name"].lower()))
     return {"start": period.start, "end": period.end, "changes": out}
+
+
+# --- store comparison (Jochen, 2026-11-16) -------------------------------------
+# The same product across shops by its comparison name (the model names it
+# generically: "Vollmilch 3,5 % 1 l"), per shop the latest regular price per
+# piece, kg or l (before the discount, as for the price changes).
+
+NAME_BATCH = 200
+
+
+def _unnamed(session: Session) -> list[str]:
+    """Distinct article texts of confirmed receipts that have no comparison name yet."""
+    query = (
+        select(ReceiptItem.name)
+        .join(Receipt, ReceiptItem.receipt_id == Receipt.id)
+        .where(Receipt.status == "confirmed", ReceiptItem.compare_name.is_(None))
+        .distinct()
+        .order_by(ReceiptItem.name)
+    )
+    return list(session.scalars(query))
+
+
+@router.get("/compare")
+def compare_stores(
+    range: str = RANGE,
+    start: date | None = None,
+    end: date | None = None,
+    food: str = FOOD,
+    q: str = Query(default="", max_length=100),
+    session: Session = Depends(get_session),
+):
+    """Products bought in at least two shops in the period, biggest price gap first."""
+    period = requested_period(session, range, start, end)
+    is_food = {c.id: c.is_food for c in session.scalars(select(Category))}
+    query = (
+        select(ReceiptItem, Receipt)
+        .join(Receipt, ReceiptItem.receipt_id == Receipt.id)
+        .where(
+            Receipt.status == "confirmed", Receipt.store_id.is_not(None),
+            Receipt.purchased_on.between(period.start, period.end),
+            ReceiptItem.compare_name.is_not(None), ReceiptItem.compare_name != "",
+        )
+        .options(selectinload(Receipt.store))
+        .order_by(Receipt.purchased_on, Receipt.id, ReceiptItem.position)
+    )
+    needle = article_key(q) if q.strip() else ""
+    # (product, unit) -> store -> the latest purchase (later rows overwrite)
+    latest: dict[tuple, dict[int, tuple]] = defaultdict(dict)
+    for item, receipt in session.execute(query).all():
+        price = regular_unit_cents(item)
+        key = article_key(item.compare_name)
+        if price is None or not key:
+            continue
+        latest[(key, item.unit)][receipt.store_id] = (item, receipt, price[0])
+    out = []
+    for (key, unit), stores in latest.items():
+        if len(stores) < 2:
+            continue
+        rows = sorted(stores.values(), key=lambda row: (row[2], row[1].store.name.lower()))
+        newest_item = max(stores.values(), key=lambda row: (row[1].purchased_on, row[1].id))[0]
+        if needle and needle not in key and not any(needle in article_key(row[0].name) for row in rows):
+            continue
+        food_item = is_food.get(newest_item.category_id, False)
+        if food != "all" and (food == "food") != food_item:
+            continue
+        low, high = round(rows[0][2]), round(rows[-1][2])
+        out.append({
+            "key": key, "name": newest_item.compare_name, "unit": unit,
+            "category_id": newest_item.category_id, "is_food": food_item,
+            "spread_cents": high - low, "spread_pct": round((high - low) / low * 100, 1) if low else 0.0,
+            # cheapest first
+            "stores": [
+                {"store_id": r.store_id, "store_name": r.store.name, "unit_cents": round(cents),
+                 "date": r.purchased_on, "article": i.name, "discount_cents": i.discount_cents, "receipt_id": r.id}
+                for i, r, cents in rows
+            ],
+        })
+    out.sort(key=lambda p: (-p["spread_pct"], p["name"].lower()))
+    return {"start": period.start, "end": period.end, "unnamed": len(_unnamed(session)), "products": out}
+
+
+@router.post("/compare/names")
+def name_older_items(session: Session = Depends(get_session)):
+    """Comparison names for lines read before they existed: one text-only
+    model request per call for up to NAME_BATCH article texts; the client
+    calls again while some remain."""
+    names = _unnamed(session)[:NAME_BATCH]
+    if not names:
+        return {"named": 0, "remaining": 0}
+    try:
+        found = get_extractor().name_products(names)
+    except ExtractionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    named = 0
+    for item in session.scalars(select(ReceiptItem).where(ReceiptItem.name.in_(names), ReceiptItem.compare_name.is_(None))):
+        # a text the model left out is no product, so it is not asked again
+        item.compare_name = found.get(item.name, "")
+        named += 1
+    session.commit()
+    return {"named": named, "remaining": len(_unnamed(session))}

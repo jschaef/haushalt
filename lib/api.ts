@@ -31,6 +31,9 @@ export type Item = {
   discount_cents?: number;
   discount_label?: string;
   category_id: number | null;
+  // generic name for the store comparison ("Vollmilch 3,5 % 1 l"); "" no
+  // product, null not named yet; left out of a patch it stays
+  compare_name?: string | null;
 };
 
 export type Receipt = {
@@ -395,6 +398,21 @@ export type PriceFilter = {
   q: string;
 };
 
+// one product bought in several shops, by its comparison name; per shop the
+// latest regular price per piece, kg or l, cheapest first
+export type StoreComparison = {
+  key: string;
+  name: string;
+  unit: Unit;
+  category_id: number | null;
+  is_food: boolean;
+  spread_cents: number;
+  spread_pct: number;
+  stores: { store_id: number; store_name: string; unit_cents: number; date: string; article: string; discount_cents: number; receipt_id: number }[];
+};
+
+export type CompareFilter = { food: "all" | "food" | "nonfood"; q: string };
+
 export type ProductLine = {
   receipt_id: number;
   purchased_on: string;
@@ -548,6 +566,14 @@ export const api = {
     if (filter.q.trim()) params.set("q", filter.q.trim());
     return request<{ start: string; end: string; changes: PriceChange[] }>(`purchases/prices?${params}`);
   },
+  compareStores: (range: Range, custom: CustomRange, filter: CompareFilter) => {
+    const params = periodQuery(range, custom);
+    if (filter.food !== "all") params.set("food", filter.food);
+    if (filter.q.trim()) params.set("q", filter.q.trim());
+    return request<{ start: string; end: string; unnamed: number; products: StoreComparison[] }>(`purchases/compare?${params}`);
+  },
+  // one batch of older lines; call again while some remain
+  nameOlderItems: () => request<{ named: number; remaining: number }>("purchases/compare/names", { method: "POST" }),
   productLines: (key: string, filter: PurchaseFilter) => {
     const params = periodQuery(filter.range, filter.custom);
     params.set("key", key);
