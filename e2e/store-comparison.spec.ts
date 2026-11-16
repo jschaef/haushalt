@@ -54,11 +54,21 @@ test("the same product across stores, cheapest first; older lines get names on r
 
 test("the receipt editor shows and keeps the comparison name", async ({ page }) => {
   await login(page);
-  await uploadOne(page);
+  const id = await uploadOne(page);
   const names = page.getByTestId("compare-name");
   await expect(names.first()).toHaveValue("Vollmilch 3,5 % 1 l");
   await names.first().fill("Milch 3,5 % 1 l");
+  // a row added by hand is not named yet ("" would mean "no product")
+  await page.getByRole("button", { name: "Position hinzufügen" }).click();
+  const added = page.getByTestId("items").getByRole("listitem").last();
+  await added.getByLabel("Artikel", { exact: true }).fill("Handgeschrieben");
+  await added.getByLabel("Betrag", { exact: true }).fill("1,00");
+  await expect(added.getByTestId("compare-name")).toHaveAttribute("placeholder", "noch nicht vergeben");
   await page.getByRole("button", { name: /^(Speichern|Save)$/ }).click();
+  await expect(page.getByText(/gespeichert/i).first()).toBeVisible();
+  const saved = await (await page.request.get(`/api/v1/receipts/${id}`)).json();
+  expect(saved.items[0].compare_name).toBe("Milch 3,5 % 1 l");
+  expect(saved.items.at(-1)).toMatchObject({ name: "Handgeschrieben", compare_name: null });
   await page.reload();
   await expect(page.getByTestId("compare-name").first()).toHaveValue("Milch 3,5 % 1 l");
 });

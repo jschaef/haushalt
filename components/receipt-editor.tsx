@@ -367,7 +367,7 @@ export function ReceiptEditor({ id }: { id: number }) {
                 update({
                   rows: [
                     ...draft.rows,
-                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", unit: "piece", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null, compare: "" },
+                    { key: `r${nextKey++}`, id: null, name: "", quantity: "1", unit: "piece", amount: "", discount: "", discount_label: "", discounted: false, category_id: null, unit_price_cents: null, compare: null },
                   ],
                 })
               }
